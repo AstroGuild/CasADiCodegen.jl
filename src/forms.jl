@@ -183,7 +183,7 @@ calls and the tables of indices in its body. The out-of-place function returns s
 arrays when its first argument is a static array, or always with `force_SA`.
 """
 function runtime_forms(alg, chunk_size::ChunkSize, ref, force_SA::Bool)
-    generate(ex) = RuntimeGeneratedFunction(@__MODULE__, @__MODULE__, ex)
+    generate(ex) = RuntimeGeneratedFunction(@__MODULE__, CONTEXT[], ex)
     hold(g) = RuntimeGeneratedFunctions.drop_expr(g)
     tables = Dict(index_tables(alg))
     index(kind, k) = tables[(kind, k)]

@@ -1,29 +1,47 @@
 # CasADiCodegen.jl
 
-[CasADi](https://web.casadi.org/) is a framework for symbolic modelling and
-algorithmic differentiation, designed primarily for nonlinear optimization and
-optimal control. CasADiCodegen.jl bundles the Julia front end distributed with CasADi and
-generates ordinary Julia functions from CasADi models, including derivatives
-computed by CasADi.
+[![Docs: dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://EllissoideRotondo.github.io/CasADiCodegen.jl/dev/)
 
-Use CasADiCodegen.jl when you want to define a model with CasADi, or load one created in
-Python, MATLAB, or C++, and then run the model and its derivatives as Julia code.
-The generated functions accept Julia arrays, so you can call them directly from
-simulation, optimization, or other Julia code.
+CasADiCodegen.jl is a package for generating plain Julia code from the functions of
+[CasADi](https://web.casadi.org/), the framework for symbolic modelling and
+algorithmic differentiation. A model is built and differentiated with CasADi, through
+the Julia front end of CasADi that the package includes, and CasADiCodegen.jl then
+emits the model and its derivatives as Julia functions, which run without CasADi and
+accept Julia arrays, static arrays, sparse matrices and the dual numbers of
+ForwardDiff.jl.
+
+Features include:
+
+- Julia functions for the current session with `build_function`, or a Julia module
+  on disk with `generate_julia`, each with an out-of-place and an in-place form.
+- Models that were built in Python, MATLAB or C++ and saved by CasADi.
+- Calls to Julia functions inside a model, with derivatives from Julia functions or
+  from an automatic differentiation backend.
+- Integrators, rootfinders and optimization solvers inside a model, which the
+  generated code solves with the SciML packages.
+- CasADi functions as the functions of SciML problems: `ODEFunction`,
+  `NonlinearFunction` and `OptimizationFunction`.
+
+CasADiCodegen.jl is meant for a model that is defined with CasADi and must run as
+Julia code, in a simulation, in an optimization with a Julia solver, or inside a SciML
+problem. A model that is written as Julia code is better served by
+[Symbolics.jl](https://docs.sciml.ai/Symbolics/stable/), whose `build_function`
+CasADiCodegen.jl follows.
 
 ## Installation
 
-CasADiCodegen.jl supports Julia 1.12 and 1.13. After you activate the environment where
-you want to use it, install the package directly from GitHub:
+CasADiCodegen.jl supports Julia 1.12 and 1.13. Install it from GitHub:
 
 ```julia-repl
 pkg> add https://github.com/EllissoideRotondo/CasADiCodegen.jl
 ```
 
-## Quick start
+The binaries of CasADi 3.8.1 come with the package.
 
-Define a symbolic function and its gradient, then build Julia functions that
-evaluate both:
+## Example
+
+We define a function of two variables and its gradient with CasADi, and then build
+Julia functions that evaluate both:
 
 ```julia
 using CasADiCodegen
@@ -32,25 +50,52 @@ x = SX.sym("x", 2)
 y = x[1]^2 + sin(x[2])
 f = CasADiCodegen.Function("f", [x], [y, gradient(y, x)])
 
-f_julia, f_julia! = build_function(f; expression = Val(false))
+f_julia, f_julia! = build_function(f; expression = Val{false})
 value, derivative = f_julia([2.0, 0.0])
 
 value       # [4.0]
 derivative  # [4.0, 1.0]
 ```
 
-`using CasADiCodegen` loads this Julia front end, including `SX`, `MX`, and symbolic
-operations such as `gradient` and `jacobian`. Write `CasADiCodegen.Function` explicitly
-because `Function` is already a Julia type.
+- `using CasADiCodegen` loads the front end of CasADi: `SX`, `MX`, `gradient`,
+  `jacobian` and the other common names.
+- `CasADiCodegen.Function` keeps its module name, because `Function` is a type of Julia.
+- `f_julia` allocates its outputs. `f_julia!` writes into arrays that the caller gives.
+- `generate_julia(f, path)` writes the same functions to a Julia module, named `F`
+  after the function `f` by default.
 
-`expression = Val(false)` makes `build_function` return callable functions for the
-current session: `f_julia` allocates its outputs, while `f_julia!` writes into
-arrays that you supply. Use [`generate_julia`](docs/src/api.md#code-generation) to
-write the generated functions to a Julia module instead.
+## Tutorials and Documentation
 
-## Documentation
+For information on using the package, see the
+[documentation](https://EllissoideRotondo.github.io/CasADiCodegen.jl/dev/). It starts
+with a [tutorial](https://EllissoideRotondo.github.io/CasADiCodegen.jl/dev/getting_started/)
+that builds a model, generates Julia functions for it and compares the forms of the
+generated code. Its how-to guides then cover models from other languages, calls to
+Julia code, integrators, events and rootfinders, the replacement of the solvers of
+CasADi by SciML solvers, CasADi functions in SciML problems, and large models; the
+concept pages explain the matrix code, the derivatives of integrators, the cost of
+the generated code and the differences from CasADi, and the API reference ends the
+manual.
 
-See [Getting started](docs/src/tutorial.md) for the complete code-generation
-workflow. The manual also describes [supported models and
-limitations](docs/src/explanation/scope.md) and provides an [API
-reference](docs/src/api.md).
+## Limits
+
+- A model must have a fixed number of inputs and outputs of fixed sizes, as every
+  CasADi function has.
+- Some CasADi nodes have no generated code, such as cone constraints and Functional
+  Mock-up Units.
+- The package is tested on Linux; macOS is not tested. It does not load on Windows,
+  because the Windows build of the CasADi front end lacks functions that it needs.
+
+The page [Scope and differences from CasADi](https://EllissoideRotondo.github.io/CasADiCodegen.jl/dev/explanation/scope/)
+of the manual lists all limits.
+
+## Acknowledgements
+
+CasADi is the work of the CasADi developers; see J. A. E. Andersson, J. Gillis,
+G. Horn, J. B. Rawlings and M. Diehl, "CasADi: a software framework for nonlinear
+optimization and optimal control", *Mathematical Programming Computation* 11
+(2019), 1–36. Anthropic Claude Code assisted with code, tests and documentation.
+
+## License
+
+CasADiCodegen.jl is released under the MIT license; see [LICENSE](LICENSE).

@@ -18,6 +18,18 @@ import StaticArraysCore
 
 RuntimeGeneratedFunctions.init(@__MODULE__)
 
+# A second context for the runtime generated functions that a generated function calls
+# inside a SciML solver. Each context has its own method of `generated_callfunc`; with
+# one method, inference sees the residual of a rootfinder as a recursion of the function
+# that calls the solver, widens the call and boxes its arguments.
+module Nested
+import ..RuntimeGeneratedFunctions
+RuntimeGeneratedFunctions.init(@__MODULE__)
+end
+
+"The context module of the runtime generated functions that `build_function` makes."
+const CONTEXT = Base.ScopedValues.ScopedValue{Module}(@__MODULE__)
+
 const Front = parentmodule(@__MODULE__)
 const C = Front.C
 const SX = C.SX

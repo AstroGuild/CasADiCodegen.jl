@@ -1,28 +1,35 @@
 # Scope and differences from CasADi
 
+This page lists what the package supports, what it refuses when it builds the code,
+and where the generated code or the front end behaves differently from CasADi or
+from Julia. It is meant for a reader who checks whether a model fits the package
+before writing it, or who meets an error at build time; the other pages of the
+manual link here instead of repeating these lists.
+
 ## What is supported
 
 | Item | State |
 |---|---|
 | Scalar (SX) functions | Each scalar operation of CasADi 3.8.1, listed below |
-| Matrix (MX) functions, not expanded | Elementwise operations, slices, joins, splits, transpose, reshape, projection, assignment to nonzeros, nonzeros at indices that are values, the search of an interval in a grid, `monitor`, calls to SX and MX functions, `map`, `mapaccum` and `fold`, `if_else` and `conditional` with `short_circuit` |
-| Functions and nodes of CasADi without instructions | Julia code for the interpolants `linear` and `bspline`, the B-spline node, `einstein`, `kron_contract`, `repsum`, `convexify`, `attachAssert`, `printme`, `dump`, `find`, `map` on threads, external functions (`Float64` only), the rootfinder `newton`, and the integrators `rk` and `collocation` with sensitivities of the first and the second order |
-| Solver objects of CasADi | As SciML problems: `ODEProblem`, `NonlinearProblem` and `OptimizationProblem`. In generated code with `solvers = CasADiCodegen.Solvers(...)`: `cvodes`, `idas`, `kinsol`, `fast_newton` and the solvers of `nlpsol` (`Float64` only), with forward and reverse derivatives, the integrators with event functions (`Float64` only, forward derivatives), and the solvers of `conic` for quadratic problems |
+| Matrix (MX) functions, not expanded | Elementwise operations, slices, joins, splits, transpose, reshape, projection (a change of the sparsity pattern of a matrix), assignment to chosen nonzeros of a matrix, reading of nonzeros at indices that the model computes, the search of an interval in a grid, `monitor`, calls to SX and MX functions, `map`, `mapaccum` and `fold`, `if_else` and `conditional` with `short_circuit = true`, which run only the selected branch |
+| Functions and nodes of CasADi without instructions | Julia code for the interpolants `linear` and `bspline`, the B-spline node, `einstein`, `kron_contract`, `repsum`, `convexify`, `attachAssert`, `printme`, `dump`, `lift`, `find`, `map` on threads, external functions (`Float64` only), the rootfinder `newton`, and the integrators `rk` and `collocation` with sensitivities of the first and the second order |
+| Solver objects of CasADi | As SciML problems: `ODEProblem`, `NonlinearProblem` and `OptimizationProblem`. In generated code with `solvers = CasADiCodegen.Solvers(...)`: `cvodes`, `idas`, `kinsol` and `fast_newton`, and the solvers of `nlpsol` with `Float64` only, all with forward and reverse derivatives, the integrators with event functions (`Float64` only, forward derivatives), and the solvers of `conic` for quadratic problems |
 | Linear algebra, not expanded | Matrix product, inner product, bilinear form, rank one update, Frobenius, 1 and infinity norms, smallest and largest element, Kronecker product, `logsumexp`, determinant, inverse, linear solve |
 | Julia functions | `callback(f, name, sizes_in, sizes_out; jacobian)`, with derivatives of any order from Julia functions or from a backend |
 | Functions of SciML problems | `ODEFunction`, `NonlinearFunction` and `OptimizationFunction` from CasADi functions, with generated derivatives; dense matrices; no Hessian of the Lagrangian, which the solvers make from the Hessians of the constraints |
 | Roots of equations | `rootfinder(name, alg, f)`; dense unknowns and arguments, derivatives of any order |
-| Ordinary differential equations | `integrator(name, alg, dae, t0, tf)`, with free times `integrator(name, alg, dae)`, and with a vector of times for `tf`; quadratures, forward sensitivities, adjoint sensitivities with `adjoint = true`, and with free times one or more events, each with a transition of the state; algebraic states with `mass`, with forward and adjoint sensitivities; no vector of times or event |
+| Ordinary differential equations | `integrator(name, alg, dae, t0, tf)`, with free times `integrator(name, alg, dae)`, and with a vector of times for `tf`; quadratures, forward sensitivities, adjoint sensitivities with `adjoint = true`, and with free times one or more events, each with a transition of the state; algebraic states with `mass`, with forward and adjoint sensitivities, but not with a vector of times or an event |
 | Rules for automatic differentiation | `CasADiCodegen.differentiable(f)`, with a forward and a reverse rule for ChainRulesCore.jl |
 | Julia functions on symbols | Methods that the front end leaves undefined: `inv` as the matrix inverse, `min`, `max`, `ifelse`, `atan(y, x)`, `hypot`, `rem`, `!=`, `&`, `LinearAlgebra.dot`, `LinearAlgebra.norm`, `SpecialFunctions.erf` |
 | Forms of a generated function | Out of place and in place on `Array`, `SArray` and `MArray` in matrix shape; in place on `SparseMatrixCSC`; in place on vectors of nonzeros with `nonzeros = true` |
-| Number types | `Float64`, `Float32` and ForwardDiff dual numbers; any real type with `nanmath = false` |
+| Number types | `Float64`, `Float32` and ForwardDiff dual numbers; any real type with the keyword `nanmath = false` of `build_function` and `generate_julia` |
+| Platforms | Linux, where the package is tested; macOS is not tested. The package does not load on Windows, because the Windows build of CasADiSWIG_jll 3.8.1 does not export the functions that the front end needs; [CasADiNative.jl](https://github.com/casadi/CasADiNative.jl), the official Julia package of CasADi, wraps the same front end and does not support Windows either |
 
 The scalar operations are:
 
 | Kind | Operations |
 |---|---|
-| Arithmetic | `+`, `-`, `*`, `/`, negation, reciprocal, square, twice, `^` with any exponent, `sqrt`, `abs`, `sign`, `copysign`, `hypot` |
+| Arithmetic | `+`, `-`, `*`, `/`, negation, reciprocal, square, twice (the product `2x`), `^` with any exponent, `sqrt`, `abs`, `sign`, `copysign`, `hypot` |
 | Exponential | `exp`, `log`, `expm1`, `log1p` |
 | Trigonometric | `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh` |
 | Rounding | `floor`, `ceil`, `fmod`, `remainder` |
@@ -31,17 +38,18 @@ The scalar operations are:
 
 ## What is refused
 
-Generated code never calls CasADi. A function whose method is not in this package
-is thus refused when the code is built, and the message names the function and
-says what the user can do, as the table shows. 
+Generated code never calls CasADi, so a function of CasADi for which the package has
+no method is refused when the code is built. The message names the function and
+says what the user can do, as the table below shows.
+
 | Function of CasADi in the graph | What the user can do |
 |---|---|
 | Integrator `cvodes` or `idas` | Give a solver of the SciML ecosystem with the option `solvers` (see [Replace the solvers of CasADi](@ref)) |
 | Rootfinder `kinsol` or `fast_newton` | Give a solver with the option `solvers` |
 | Solver of `nlpsol` | Give a solver with the option `solvers` |
 | Integrator `rk` or `collocation` with an event function | Give a solver with an override, `Solvers(overrides = ...)` |
-| Forward directions of an integrator of CasADi with an event function and algebraic states | Nothing: they are not supported |
-| Callback of a subtype of `CasadiCallback`, whose Julia object CasADi keeps to itself | Make it with `callback` and a Julia function |
+| Forward directions of an integrator of CasADi with an event function and algebraic states | Nothing: the package refuses them when it builds the code |
+| Callback of a subtype of `CasadiCallback`, the abstract type of the front end for a callback written as a Julia type, whose Julia object CasADi keeps to itself | Make it with `callback` and a Julia function |
 | Solver of `conic` (quadratic problem) | Give a solver with the option `solvers`, field `optimization`; CasADi itself has no derivatives of such a solver |
 | Solver of `conic` with cone constraints; other classes, such as a Functional Mock-up Unit (FMU) | Nothing: they are not supported |
 | Matrix 2-norm without expansion | Nothing: CasADi itself cannot evaluate it |
@@ -58,28 +66,27 @@ says what the user can do, as the table shows.
     `"max_iter" => 50` allowed 1 iteration, in a nested Dict too. CasADi gave no
     error, because it accepts `true` for an integer or a real option. The values 0
     and 1 were right by chance; any other whole number, negative too, was 1. A model
-    with such an option gives other numbers from version 0.26.0 on, and you should
-    compute again any result that came from it. Your code needs no change.
+    with such an option gives other numbers from version 0.26.0 on, so any result
+    that came from it must be computed again. The code of the model needs no change,
+    except in the two cases that the end of this section names.
 
-The cause is in the code that SWIG generates for Julia: it converts each value of a
-Dict of options to a `GenericType` of CasADi and tries the type `bool` first, which
-accepts any `Int64` and any `Float64` that is a whole number. A vector of such numbers
-becomes a vector of `bool`, which CasADi refuses with the error "type mismatch", as for
-the options `constraints` and `u_scale` of `kinsol`; a vector thus gave an error and no
-wrong result. CasADiCodegen.jl now converts the Dict before the call in each function of the
-generated module `CasADiCodegen.C` that takes options, so that an integer reaches CasADi as an
-integer and any other real number as a double, also in a vector and in a nested Dict.
+The cause is in the Julia front end of CasADi 3.8.1, which converts a number to the
+boolean `true` before it tries an integer or a double; a vector of such numbers becomes
+a vector of `bool`, which CasADi refuses with the error "type mismatch", so a vector
+gave an error and no wrong result. The defect is reported as
+[casadi/casadi#4445](https://github.com/casadi/casadi/issues/4445), for CasADi 3.8.2.
+CasADiCodegen.jl converts the Dict before each call of the front end that takes
+options, so that an integer reaches CasADi as an integer and any other real number as
+a double, also in a vector and in a nested Dict.
 
 Two cases keep the defect: a value in a `Vector{Any}` or in another container that is
-not a Dict, and the module of CasADiSWIG_jll used directly, without CasADiCodegen.jl. In the
-first case, give a vector with a concrete element type, such as `[1, 2]` or
-`Float64[1, 2]`, and give nested options as a Dict. The function
+not a Dict, and the module of CasADiSWIG_jll used directly, without CasADiCodegen.jl.
+The first case is avoided with a vector of a concrete element type, such as `[1, 2]`
+or `Float64[1, 2]`, and with nested options given as a Dict. The function
 `change_option(f, name, value)` is not affected: it takes a `GenericType` only, and the
 front end has no way to make one from a number.
 
 ### Other differences
-
-Five other behaviours differ from what a user of CasADi or of Julia can expect.
 
 - The `newton` rootfinder does not read the option `constraints`, because the Newton
   method of CasADi does not use it.
@@ -97,10 +104,19 @@ Five other behaviours differ from what a user of CasADi or of Julia can expect.
   |---|---|---|---|
   | 50 | 1.9 µs | 10.3 µs | 6.6 µs |
   | 200 | 7.8 µs | 143.7 µs | 12.3 µs |
-- CasADi 3.8.1 evaluates a sum to the nonzeros at a fixed slice plus indices that are
-  values wrongly, with values from other memory; this node is the reverse derivative
-  of a read such as `get_nz(v, false, Slice(1, 5, 2), i)`. The generated code gives
-  the correct sum, so it differs from the CasADi virtual machine there.
+- CasADi 3.8.1 computes a wrong value, read from other memory, for one node: the sum
+  into the nonzeros at a fixed slice plus indices that are values of the model. This
+  node is the reverse derivative of a read such as `get_nz(v, false, Slice(1, 5, 2), i)`,
+  in which the `Slice` of CasADi counts from 0 and so selects the second and the fourth
+  nonzero. The generated code gives the correct sum, so its result differs there from
+  that of the virtual machine of CasADi, the interpreter with which CasADi evaluates a
+  function on numbers.
+- CasADi 3.8.1 gives an integrator with an event function the sparsity pattern of the
+  model without events, so its Jacobian loses the effect of the transitions, with no
+  error, in the virtual machine of CasADi too. In this package, `jacobian(ex, arg)` of
+  an expression that calls such an integrator gives the dense Jacobian of one forward
+  direction per element of `arg`, and the method `jacobian()` of a `Function` that
+  holds one throws an error that names `jtimes`.
 - `inv(A)` is the matrix inverse for SX and for MX, as in Julia, and `inv(A, "qr")`
   names the linear solver of an MX graph. The function `CasADiCodegen.C.inv(A)` of the
   front end of CasADi 3.8.1 is the reciprocal of each element for an MX matrix.

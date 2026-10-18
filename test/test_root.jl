@@ -34,11 +34,19 @@ end
     # Matrix code.
     h = build_function(f; nonzeros = true, expression = Val{false}, expand = false)
     @test all(all(isapprox.(a, b; atol = 1e-11)) for (a, b) in zip(h(blank(), ([Mv], [Mv], [ev])), expected))
-    # The in-place function on arrays allocates no memory (the function on nonzeros allocates 224 bytes on Julia 1.13).
+    # The in-place function on arrays and the function on nonzeros allocate no memory, also
+    # for the root and one derivative alone (regression: 96 bytes per call).
     _, inplace = build_function(f; expression = Val{false})
     out, arguments = Tuple(zeros(1, 1) for _ in 1:6), ([Mv], [Mv], [ev])
     inplace(out, arguments)
     @test (@allocated inplace(out, arguments)) == 0
+    nonzeros = blank()
+    g(nonzeros, arguments)
+    @test (@allocated g(nonzeros, arguments)) == 0
+    _, small! = build_function(CasADiCodegen.Function("small", [guess, m, ec], [root, first_order[2]]); expression = Val{false})
+    small_out = (zeros(1), zeros(1))
+    small!(small_out, arguments)
+    @test (@allocated small!(small_out, arguments)) == 0
     # Dual numbers pass through the solver.
     value(m) = (r = [zeros(typeof(m), C.nnz_out(f, j)) for j in 0:5]; g(r, ([m], [m], [ev])); r[1][1])
     @test isapprox(ForwardDiff.derivative(value, Mv), 1 / d; atol = 1e-10)

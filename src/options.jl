@@ -6,7 +6,7 @@
 # CasADi as `true`, that is 1, and `"margin" => 2.0` as 1.0. A `GenericType` that
 # Julia gives is passed as it is, so each number becomes a `GenericType` of its own
 # type here, made by the deserializer of CasADi. The functions of the front end
-# get this conversion when the module is included (see `typed_front_end`).
+# get this conversion when the module is included (see front_end.jl).
 
 # The codes of `casadi::TypeID` for the types that a number of Julia can have. A
 # vector of vectors needs none: the front end gives it the right type.
@@ -100,24 +100,5 @@ function typed_definitions!(ex, count::Ref{Int})
         return ex
     end
     foreach(a -> typed_definitions!(a, count), ex.args)
-    ex
-end
-
-"""
-    typed_front_end(ex)
-
-The expression `ex` of the convenience layer of the front end, with the include of
-the generated module `casadi` given `typed_definitions!` as its `mapexpr`.
-"""
-function typed_front_end(ex)
-    Meta.isexpr(ex, :call) && ex.args[1] === :include && length(ex.args) == 2 || return ex
-    Expr(:call, :include, typed_module, ex.args[2])
-end
-
-function typed_module(ex)
-    Meta.isexpr(ex, :module) || return ex
-    count = Ref(0)
-    typed_definitions!(ex, count)
-    count[] > 100 || throw(AssertionError("only $(count[]) functions of the front end take options; the front end has changed"))
     ex
 end

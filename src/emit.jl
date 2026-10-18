@@ -254,7 +254,7 @@ named_frame(alg::Algorithm, name::Symbol, chunk_size::ChunkSize, ref; julia = id
 
 "The sub-functions of split code as runtime generated functions `(w) -> nothing`; none when the algorithm is one chunk."
 function runtime_frame(alg::Algorithm, chunk_size::ChunkSize, ref)
-    generate(ex) = RuntimeGeneratedFunctions.drop_expr(RuntimeGeneratedFunction(@__MODULE__, @__MODULE__, ex))
+    generate(ex) = RuntimeGeneratedFunctions.drop_expr(RuntimeGeneratedFunction(@__MODULE__, CONTEXT[], ex))
     scalar_frame(alg, Any[generate(chunk_function(:((w,)), statements)) for statements in split_statements(alg, chunk_size, ref)])
 end
 
@@ -297,7 +297,7 @@ One runtime generated function `(res, arg) -> res`, which holds the functions
 that it calls in its body.
 """
 runtime_function(alg, chunk_size::ChunkSize, ref) =
-    RuntimeGeneratedFunctions.drop_expr(RuntimeGeneratedFunction(@__MODULE__, @__MODULE__,
+    RuntimeGeneratedFunctions.drop_expr(RuntimeGeneratedFunction(@__MODULE__, CONTEXT[],
         entry_function(alg, :((res, arg)), runtime_frame(alg, chunk_size, ref), ref, unique_key(alg.name))))
 
 function_name(alg) = alg.name

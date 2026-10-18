@@ -33,7 +33,8 @@ function root_function(name::AbstractString, f::C.Function, make_solver)
     symbols(prefix) = [MX.sym("$prefix$i", sp) for (i, sp) in enumerate(patterns)]
     arguments = symbols("a")
     value = Front.densify(f(arguments...))
-    emitted(g) = Emitted(build_function(g; expression = Val{false})[1], g, :outofplace)
+    # The solver calls the residual and its slope inside the function that calls the solver.
+    emitted(g) = Emitted(Base.ScopedValues.with(() -> build_function(g; expression = Val{false})[1], CONTEXT => Nested), g, :outofplace)
     residual = emitted(Front.Function("residual", arguments, [value]))
     slope = emitted(Front.Function("slope", arguments, [Front.densify(Front.jacobian(value, arguments[1]))]))
     implicit_function(name, f, make_solver(residual, slope, n))

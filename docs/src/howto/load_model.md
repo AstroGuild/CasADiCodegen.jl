@@ -1,14 +1,19 @@
 # Load a model from another language
 
-A model written with CasADi in Python, MATLAB or C++ becomes Julia code with no
-translation by hand. Save the function there with the method `save` of CasADi:
+A model that is written with CasADi in Python, MATLAB or C++ becomes Julia code
+without a translation by hand, because CasADi saves a function to a file that the
+Julia front end reads. This page saves a function, loads it in Julia and generates
+code for it.
+
+In the other language, we save the function with the method `save` of CasADi:
 
 ```python
 f.save("model.casadi")        # Python; in MATLAB the call is the same
 ```
 
-Load the file in Julia with `CasADiCodegen.Function.load`. `build_function` and
-`generate_julia` take the result as any other function.
+In Julia, we load the file with `CasADiCodegen.Function.load`. `build_function` and
+`generate_julia` take the result as any other function. In the example, a function
+made in Julia stands for the model of the other language:
 
 ```@example load
 using CasADiCodegen
@@ -21,6 +26,6 @@ g, g! = build_function(f; expression = Val{false})
 g([2.0, 0.5])
 ```
 
-The file must come from CasADi 3.8.1 or older, because CasADi reads the files of
-older versions only. A model that holds a solver of CasADi (`cvodes`, `nlpsol`, ...)
-also needs [Replace the solvers of CasADi](@ref).
+The file must come from CasADi 3.8.1, the version of the package, or from an older
+version: CasADi reads the files of its own version and of older versions only. A model that holds a solver of CasADi (`cvodes`,
+`nlpsol`, ...) also needs [Replace the solvers of CasADi](@ref).

@@ -563,7 +563,7 @@ statements of its callers, as are the constant table and the index table.
 """
 function runtime_frame(alg::MXAlgorithm, chunk_size::ChunkSize, ref)
     em, (layout, statements) = emission(alg, :entry, chunk_size, ref)
-    generate(ex) = RuntimeGeneratedFunction(@__MODULE__, @__MODULE__, ex)
+    generate(ex) = RuntimeGeneratedFunction(@__MODULE__, CONTEXT[], ex)
     values = Dict{Symbol,Any}(em.constants_name => em.constants, em.indices_name => em.indices)
     sites = call_sites(last.(em.julia))
     merge!(values, Dict(placeholder => sites[f] for (placeholder, f) in em.julia))

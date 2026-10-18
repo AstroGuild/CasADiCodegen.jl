@@ -155,6 +155,11 @@ end
     @test_throws "CasADiCodegen.Solvers(ode = ...)" K.algorithm(f; expand = false)
     # The Jacobian is that of the forward sensitivities, whose states jump at each impact.
     @test all_agree(evaluated(native(f; solvers), f, values), expected; rtol = 1e-8)
+    @testset "jacobian of a graph with the integrator is that of forward directions" begin
+        slopes_jacobian = CasADiCodegen.Function("slopes_jacobian", [x, p, u], [C.densify(jacobian(C.vertcat([final, quadrature]), arguments))])
+        @test all_agree(evaluated(native(slopes_jacobian; solvers), slopes_jacobian, values), expected[3:3]; rtol = 1e-8)
+        @test_throws "jtimes" CasADiCodegen.Function("whole", [x, p, u], [final]).jacobian()
+    end
     plain = CasADiCodegen.Function("plain", [x, p, u], [final])
     @testset "a written module has the solver" begin
         text = sprint(io -> generate_julia(plain, io; module_name = :Written, name = :run!, expand = false, solvers))

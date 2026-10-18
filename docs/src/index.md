@@ -1,41 +1,186 @@
-# CasADiCodegen.jl
+# CasADiCodegen.jl: Julia code generation for CasADi functions
 
-CasADiCodegen.jl turns a CasADi function into plain Julia code. You write the model with
-the official CasADi front end, CasADi computes the derivatives, and the package
-emits Julia functions that run without CasADi.
+CasADiCodegen.jl is a package for generating plain Julia code from the functions of
+[CasADi](https://web.casadi.org/), the framework for symbolic modelling and
+algorithmic differentiation. A model is built and differentiated with CasADi, through
+the Julia front end of CasADi that the package includes, and CasADiCodegen.jl then
+emits the model and its derivatives as Julia functions, which run without CasADi and
+accept Julia arrays, static arrays, sparse matrices and the dual numbers of
+ForwardDiff.jl.
 
-!!! warning "Integer options before version 0.26.0"
-    Before version 0.26.0, an integer or a whole `Float64` in a Dict of options,
-    such as `"number_of_finite_elements" => 7`, reached CasADi as `true`, that is 1.
-    Compute again the results of a model with such an option. Your code needs no
-    change. See [Numbers in a Dict of options](@ref).
+Features include:
 
-## Where to go
+- Julia functions for the current session with [`build_function`](@ref), or a Julia module
+  on disk with [`generate_julia`](@ref), each with an out-of-place and an in-place form.
+- Models that were built in Python, MATLAB or C++ and saved by CasADi.
+- Calls to Julia functions inside a model, with derivatives from Julia functions or
+  from an automatic differentiation backend.
+- Integrators, rootfinders and optimization solvers inside a model, which the
+  generated code solves with the SciML packages.
+- CasADi functions as the functions of SciML problems: `ODEFunction`,
+  `NonlinearFunction` and `OptimizationFunction`.
 
-| You want to | Read |
-|---|---|
-| Generate your first function | [Getting started](@ref) |
-| Use a model written in Python, MATLAB or C++ | [Load a model from another language](@ref) |
-| Call your own Julia code from a model | [Call a Julia function from the model](@ref) |
-| Integrate an ODE inside a model, with derivatives | [Integrate a differential equation](@ref) |
-| Stop an integration at an event | [Stop at an event](@ref events) |
-| Solve an implicit equation inside a model | [Solve an equation](@ref) |
-| Generate code for a model that holds `cvodes`, `idas`, `kinsol` or `nlpsol` | [Replace the solvers of CasADi](@ref) |
-| Use a CasADi function in a SciML problem | [Give a CasADi function to a SciML problem](@ref) |
-| Shorten compile time of a large model | [Large functions and the cache on disk](@ref) |
-| Give the generated derivatives to Zygote.jl and others | [Use the generated derivatives from an AD package](@ref) |
-| Find a slow operation or the source of a NaN | [Inspect a model](@ref) |
-| Understand matrix (MX) code and `expand = false` | [Matrix code and functions without instructions](@ref) |
-| Understand how an integrator gets its derivatives | [How an integrator is differentiated](@ref) |
-| Know what is supported | [Scope and differences from CasADi](@ref) |
-| Look up a function | [API reference](@ref) |
+A CasADi function maps a fixed number of inputs to a fixed number of outputs,
 
-## Install
+```math
+(y_1, \dots, y_m) = f(x_1, \dots, x_n),
+```
 
-The package supports Julia 1.12 and 1.13. It is registered in the private registry
-`EllissoideRotondo/Registry.jl`:
+where each input ``x_i`` and each output ``y_j`` is a matrix with a fixed sparsity
+pattern. The outputs can contain derivatives of other outputs, such as a Jacobian
+``\partial y_1 / \partial x_1`` or a Hessian, which CasADi forms from the
+expression graph before the code is generated.
+
+## When to use CasADiCodegen.jl
+
+CasADiCodegen.jl is the right choice when a model is defined with CasADi, or
+exists already in a CasADi file, and the model and its derivatives must run as Julia
+code: in a simulation, in an optimization with a Julia solver, or inside a SciML
+problem. To build a model from Julia code instead, use
+[Symbolics.jl](https://docs.sciml.ai/Symbolics/stable/), whose `build_function`
+CasADiCodegen.jl follows. To evaluate a model with CasADi itself, in C or through
+its solvers, use the front end alone or the code generation of CasADi for C.
+
+## Installation
+
+The package supports Julia 1.12 and 1.13. Install it from GitHub:
 
 ```julia-repl
-pkg> registry add https://github.com/EllissoideRotondo/Registry.jl
-pkg> add CasADiCodegen
+pkg> add https://github.com/EllissoideRotondo/CasADiCodegen.jl
 ```
+
+The binaries of CasADi 3.8.1 and its Julia front end come with the package.
+
+!!! note "Users of versions before 0.26.0"
+    Integer options in a Dict, such as `"number_of_finite_elements" => 7`, reached
+    CasADi as 1 before version 0.26.0. See [Numbers in a Dict of options](@ref).
+
+## Contents
+
+### Tutorial
+
+The tutorial builds a small model, generates Julia functions for it, and compares
+the forms of the generated code.
+
+```@contents
+Pages = ["getting_started.md"]
+Depth = 2
+```
+
+### Models
+
+These guides show how a model gets into the package and what it can contain:
+a file of another language, a call to Julia code, an integrator, an event or an
+implicit equation.
+
+```@contents
+Pages = [
+    "howto/load_model.md",
+    "howto/callbacks.md",
+    "howto/integrators.md",
+    "howto/events.md",
+    "howto/rootfinders.md",
+]
+Depth = 2
+```
+
+### Solvers and SciML
+
+These guides replace the solvers of CasADi in generated code, pass a CasADi
+function to a SciML problem, and give the generated derivatives to automatic
+differentiation packages.
+
+```@contents
+Pages = [
+    "howto/casadi_solvers.md",
+    "howto/sciml_functions.md",
+    "howto/autodiff_rules.md",
+]
+Depth = 2
+```
+
+### Large models and debugging
+
+These guides shorten the compilation of a large model and find a slow operation or
+the source of a NaN.
+
+```@contents
+Pages = [
+    "howto/large_functions.md",
+    "howto/inspect.md",
+]
+Depth = 2
+```
+
+### Concepts
+
+The concept pages explain the two kinds of generated code, how an integrator gets
+its derivatives, what the generated code costs, and what the package supports and
+refuses.
+
+```@contents
+Pages = [
+    "explanation/matrix_code.md",
+    "explanation/integrator_derivatives.md",
+    "explanation/performance.md",
+    "explanation/scope.md",
+]
+Depth = 2
+```
+
+### Reference
+
+The API reference gives the docstrings of `build_function` and `generate_julia`, of
+the methods that the package adds to `callback`, `integrator` and `rootfinder`, and
+of the constructors of SciML problems and functions from CasADi functions.
+
+```@contents
+Pages = ["api.md"]
+Depth = 2
+```
+
+## Contributing
+
+- Report bugs and request features on the
+  [issue tracker](https://github.com/EllissoideRotondo/CasADiCodegen.jl/issues).
+- Before opening a pull request, run the test suite with
+  `julia --project=. -e 'using Pkg; Pkg.test()'` from the repository root. Each group
+  of tests is a file `test/test_<group>.jl`, and `Pkg.test(; test_args = ["mx", "root"])`
+  runs two groups. On Julia 1.12, also pass `julia_args = ["--check-bounds=auto"]`
+  (see [Keep bounds checks off in tests](@ref)).
+- To build this manual, run `julia --project=docs -e 'using Pkg; Pkg.instantiate()'`
+  and then `julia --project=docs docs/make.jl` from the repository root. The
+  examples run during the build, and the pages are written to `docs/build/`.
+
+## Reproducibility
+
+The examples of this manual run when it is built, with the packages of
+`docs/Project.toml` at the versions below. The times in the tables were measured
+once each, on Linux with an AMD Ryzen 9 5950X, unless a page says otherwise.
+
+```@raw html
+<details><summary>Julia and the packages of this build</summary>
+```
+
+```@example
+using InteractiveUtils # hide
+versioninfo() # hide
+```
+
+```@example
+using Pkg # hide
+Pkg.status() # hide
+```
+
+```@raw html
+</details>
+```
+
+## Acknowledgements
+
+CasADi is the work of the CasADi developers, and its Julia front end is the SWIG
+interface of the CasADi project. CasADi is described in J. A. E. Andersson,
+J. Gillis, G. Horn, J. B. Rawlings and M. Diehl, "CasADi: a software framework for
+nonlinear optimization and optimal control", *Mathematical Programming Computation*
+11 (2019), 1–36. The forms of the generated functions follow `build_function` of
+Symbolics.jl.

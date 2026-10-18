@@ -157,6 +157,38 @@ end
 
 column_of(value) = C.vec(C.densify(value))
 
+"Whether `f`, or a function of its matrix graph, is an integrator of CasADi with an event function."
+function has_events(f::C.Function)
+    C.class_name(f) in INTEGRATOR_CLASSES && return C.nnz_out(C.get_function(f, "dae"), 3) > 0
+    C.is_a(f, "MXFunction") || return false
+    any(k -> C.instruction_id(f, k) == C.OP_CALL && has_events(C.which_function(C.instruction_MX(f, k))), 0:C.n_instructions(f)-1)
+end
+
+"""
+    event_jacobian(ex::MX, arg::MX) -> Union{MX,Nothing}
+
+The Jacobian of `ex` by `arg` from one forward direction per element of `arg`, dense, when
+the graph of `ex` holds an integrator of CasADi with an event function; `nothing` otherwise.
+`jacobian` of CasADi 3.8.1 gives such an integrator the sparsity pattern of the model without
+events, so the Jacobian that it builds on that pattern is wrong. The method `jacobian(ex, arg)`
+of the front end returns this Jacobian when it is not `nothing`.
+"""
+function event_jacobian(ex::C.MX, arg::C.MX)
+    has_events(Front.Function("graph", C.symvar(ex), [ex])) || return nothing
+    n = C.numel(arg)
+    C.jtimes(C.vec(ex), C.vec(arg), MX(C.DM([Float64(i == j) for i in 1:n, j in 1:n])))
+end
+
+"""
+    check_jacobian(f::CasADiCodegen.Function)
+
+Throw an `ArgumentError` when `f` holds an integrator of CasADi with an event function, whose
+Jacobian function CasADi 3.8.1 builds on a wrong sparsity pattern (see `event_jacobian`). The
+method `jacobian(f)` of the front end calls it.
+"""
+check_jacobian(f::C.Function) =
+    @requires !has_events(f) "the Jacobian function of \"$(C.name(f))\" would be wrong: it holds an integrator of CasADi with an event function, to which CasADi 3.8.1 gives the sparsity pattern of the model without events; take the derivatives with jtimes, one direction per input, or with jacobian of the expressions"
+
 """
     integrator_model(I::CasADiCodegen.Function) -> NamedTuple
 
