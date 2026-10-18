@@ -1,6 +1,7 @@
 module CasADiCodegenSciMLBaseExt
 
 import CasADiCodegen
+import CasADiNative
 import SciMLBase
 import StaticArrays
 import LinearAlgebra
@@ -78,10 +79,10 @@ end
 (s::Solver)(x0, q) = integrate!(state(s, promote_type(eltype(x0), eltype(q)), x0, q), s, x0, q)
 
 """
-    integrator(name, alg, dae, t0, tf; specialize, adjoint = false, mass, options...) -> CasADiCodegen.Function
-    integrator(name, alg, dae, t0, times::AbstractVector; specialize, adjoint = false, options...) -> CasADiCodegen.Function
+    integrator(name, alg, dae, t0, tf; specialize, adjoint = false, mass, options...) -> CasADiNative.Function
+    integrator(name, alg, dae, t0, times::AbstractVector; specialize, adjoint = false, options...) -> CasADiNative.Function
     integrator(name, alg, dae; specialize, adjoint = false, mass, direction = 0, interp_points = 10,
-               events = 1, terminal = true, options...) -> CasADiCodegen.Function
+               events = 1, terminal = true, options...) -> CasADiNative.Function
 
 Make a CasADi function that integrates an ordinary differential equation with the SciML
 algorithm `alg`, for example `Vern9()` of OrdinaryDiffEqVerner.jl. CasADi differentiates
@@ -136,7 +137,7 @@ See [Integrate a differential equation](@ref) and [Stop at an event](@ref events
 
 # Examples
 ```julia
-using CasADiCodegen
+using CasADiNative, CasADiCodegen
 using OrdinaryDiffEqVerner: Vern9
 
 x, mu = MX.sym("x", 4), MX.sym("mu")
@@ -145,10 +146,10 @@ model = Dict("x" => x, "p" => mu, "ode" => vertcat(x[3], x[4], -mu * x[1] / r3, 
 F = integrator("F", Vern9(), model, 0.0, 3.0; abstol = 1e-13, reltol = 1e-13)
 
 x0, p = MX.sym("x0", 4), MX.sym("p")
-f = CasADiCodegen.Function("f", [x0, p], [F(x0, p), jacobian(F(x0, p), x0)])
+f = CasADiNative.Function("f", [x0, p], [F(x0, p), jacobian(F(x0, p), x0)])
 ```
 """
-function CasADiCodegen.integrator(name::AbstractString, alg::SciMLBase.AbstractODEAlgorithm, dae, t0::Real, tf::Real;
+function CasADiNative.integrator(name::AbstractString, alg::SciMLBase.AbstractODEAlgorithm, dae, t0::Real, tf::Real;
                            specialize::Type{<:SciMLBase.AbstractSpecialization} = SciMLBase.FullSpecialize,
                            adjoint::Bool = false, mass::AbstractVector{<:Real} = Float64[], options...)
     # The adjoint equations run backward, on the solver with free times.
@@ -157,14 +158,14 @@ function CasADiCodegen.integrator(name::AbstractString, alg::SciMLBase.AbstractO
     CasADiCodegen.Codegen.ode_integrator(name, dae, t0, tf, make_solver; adjoint, mass = Vector{Float64}(mass))
 end
 
-function CasADiCodegen.integrator(name::AbstractString, alg::SciMLBase.AbstractODEAlgorithm, dae, t0::Real, times::AbstractVector{<:Real};
+function CasADiNative.integrator(name::AbstractString, alg::SciMLBase.AbstractODEAlgorithm, dae, t0::Real, times::AbstractVector{<:Real};
                            specialize::Type{<:SciMLBase.AbstractSpecialization} = SciMLBase.FullSpecialize,
                            adjoint::Bool = false, options...)
     make_solver(rhs, n, m) = Solver(String(name), rhs, alg, NaN, NaN, true, specialize, values(options))
     CasADiCodegen.Codegen.ode_grid(name, dae, t0, times, make_solver; adjoint)
 end
 
-function CasADiCodegen.integrator(name::AbstractString, alg::SciMLBase.AbstractODEAlgorithm, dae;
+function CasADiNative.integrator(name::AbstractString, alg::SciMLBase.AbstractODEAlgorithm, dae;
                            specialize::Type{<:SciMLBase.AbstractSpecialization} = SciMLBase.FullSpecialize,
                            direction::Integer = 0, interp_points::Integer = 10, adjoint::Bool = false,
                            events::Integer = 1, terminal::Bool = true, mass::AbstractVector{<:Real} = Float64[], options...)
@@ -425,7 +426,7 @@ function (s::RootSolver{N})(z0, parameters...) where {N}
 end
 
 """
-    rootfinder(name, alg, f; options...) -> CasADiCodegen.Function
+    rootfinder(name, alg, f; options...) -> CasADiNative.Function
 
 Make a CasADi function that solves `f(z, p1, p2, ...) = 0` for `z` with the SciML algorithm
 `alg`, for example `SimpleNewtonRaphson()` of SimpleNonlinearSolve.jl. The function takes a
@@ -440,18 +441,18 @@ CasADi differentiates the root to any order by the implicit function theorem.
 
 # Examples
 ```julia
-using CasADiCodegen
+using CasADiNative, CasADiCodegen
 using SimpleNonlinearSolve: SimpleNewtonRaphson
 
 E, M, e = SX.sym("E"), SX.sym("M"), SX.sym("e")
-kepler = CasADiCodegen.Function("kepler", [E, M, e], [E - e * sin(E) - M])
+kepler = CasADiNative.Function("kepler", [E, M, e], [E - e * sin(E) - M])
 anomaly = rootfinder("anomaly", SimpleNewtonRaphson(), kepler; abstol = 1e-14)
 
 m, ec = MX.sym("m"), MX.sym("ec")
-f = CasADiCodegen.Function("f", [m, ec], [anomaly(m, m, ec)])    # the mean anomaly is the first guess
+f = CasADiNative.Function("f", [m, ec], [anomaly(m, m, ec)])    # the mean anomaly is the first guess
 ```
 """
-function CasADiCodegen.rootfinder(name::AbstractString, alg::SciMLBase.AbstractNonlinearAlgorithm, f::CasADiCodegen.Function; options...)
+function CasADiNative.rootfinder(name::AbstractString, alg::SciMLBase.AbstractNonlinearAlgorithm, f::CasADiNative.Function; options...)
     make_solver(residual, slope, n) =
         RootSolver{n,typeof(residual),typeof(alg),typeof(values(options))}(String(name), residual, alg, values(options))
     CasADiCodegen.Codegen.root_function(name, f, make_solver)
@@ -480,7 +481,7 @@ G.object_source(writer::G.SourceWriter, s::RootSolver{N}) where {N} = :(
 # CasADi functions as the functions of SciML problems. Each wrapper calls the
 # in-place generated function with the arguments that the CasADi function has.
 
-const C = CasADiCodegen.C
+const C = CasADiNative.C
 
 "A generated in-place function `g!` as a SciML function of `N` of the arguments (u, p, t)."
 struct Call{N,G}
@@ -527,23 +528,23 @@ end
 (h::Hessians{1})(H, x, p) = (h.g!(H, (x,)); nothing)
 (h::Hessians{2})(H, x, p) = (h.g!(H, (x, p)); nothing)
 
-symbols(f::CasADiCodegen.Function) = [CasADiCodegen.MX.sym(C.name_in(f, i), C.sparsity_in(f, i)) for i in 0:C.n_in(f)-1]
+symbols(f::CasADiNative.Function) = [CasADiNative.MX.sym(C.name_in(f, i), C.sparsity_in(f, i)) for i in 0:C.n_in(f)-1]
 # CasADi does not accept the function names "jac" and "hess", thus each name gets a prefix.
-inplace(name, arguments, value) = build_function(CasADiCodegen.Function("sciml_" * name, arguments, [value]); expression = Val{false})[2]
+inplace(name, arguments, value) = build_function(CasADiNative.Function("sciml_" * name, arguments, [value]); expression = Val{false})[2]
 build_function(f; options...) = CasADiCodegen.build_function(f; options...)
 shape(sp) = (C.size1(sp), C.size2(sp))
 
 "The arguments of `f` as symbols and its result on them, when it maps a column vector to one of the same size."
-function vector_field(kind, f::CasADiCodegen.Function, most::Int)
+function vector_field(kind, f::CasADiNative.Function, most::Int)
     @requires 1 <= C.n_in(f) <= most && C.n_out(f) == 1 "$kind: the function \"$(C.name(f))\" must have 1 to $most arguments and one result"
     n = C.size1(C.sparsity_in(f, 0))
     @requires shape(C.sparsity_in(f, 0)) == (n, 1) && shape(C.sparsity_out(f, 0)) == (n, 1) "$kind: the first argument and the result of \"$(C.name(f))\" must be column vectors of one size"
     arguments = symbols(f)
-    arguments, CasADiCodegen.densify(f(arguments...))
+    arguments, CasADiNative.densify(f(arguments...))
 end
 
 """
-    SciMLBase.ODEFunction(f::CasADiCodegen.Function; jac = true, paramjac = true, options...)
+    SciMLBase.ODEFunction(f::CasADiNative.Function; jac = true, paramjac = true, options...)
 
 Make the in-place SciML function of the ordinary differential equation whose right side is
 the CasADi function `f(u)`, `f(u, p)` or `f(u, p, t)`. It holds generated code for the
@@ -556,26 +557,26 @@ sparsity pattern of the Jacobian. See [Give a CasADi function to a SciML problem
 
 # Examples
 ```julia
-using CasADiCodegen
+using CasADiNative, CasADiCodegen
 import SciMLBase
 
 u, k, t = SX.sym("u", 2), SX.sym("k"), SX.sym("t")
-rhs = CasADiCodegen.Function("rhs", [u, k, t], [vertcat(u[2], -k * u[1])])
+rhs = CasADiNative.Function("rhs", [u, k, t], [vertcat(u[2], -k * u[1])])
 problem = SciMLBase.ODEProblem(SciMLBase.ODEFunction(rhs), [1.0, 0.0], (0.0, pi), [4.0])
 ```
 """
-function SciMLBase.ODEFunction(f::CasADiCodegen.Function; jac::Bool = true, paramjac::Bool = true, options...)
+function SciMLBase.ODEFunction(f::CasADiNative.Function; jac::Bool = true, paramjac::Bool = true, options...)
     arguments, value = vector_field("ODEFunction", f, 3)
     n = length(arguments)
     wrap(name, expression) = Call{n,Any}(inplace(name, arguments, expression)) |> concrete
     SciMLBase.ODEFunction{true,SciMLBase.FullSpecialize}(wrap("rhs", value);
-        jac = jac ? wrap("jac", CasADiCodegen.jacobian(value, arguments[1])) : nothing,
-        paramjac = paramjac && n >= 2 ? wrap("paramjac", CasADiCodegen.jacobian(value, arguments[2])) : nothing, options...)
+        jac = jac ? wrap("jac", CasADiNative.jacobian(value, arguments[1])) : nothing,
+        paramjac = paramjac && n >= 2 ? wrap("paramjac", CasADiNative.jacobian(value, arguments[2])) : nothing, options...)
 end
 concrete(c::Call{N}) where {N} = Call{N,typeof(c.g!)}(c.g!)
 
 """
-    SciMLBase.NonlinearFunction(f::CasADiCodegen.Function; jac = true, options...)
+    SciMLBase.NonlinearFunction(f::CasADiNative.Function; jac = true, options...)
 
 Make the in-place SciML function of the equations `f(u) = 0` or `f(u, p) = 0`, where `f` is
 a CasADi function. It holds generated code for the residual and for its Jacobian (`jac`).
@@ -586,20 +587,20 @@ a CasADi function. It holds generated code for the residual and for its Jacobian
 
 # Examples
 ```julia
-residual = CasADiCodegen.Function("r", [z, q], [equations])
+residual = CasADiNative.Function("r", [z, q], [equations])
 problem = SciMLBase.NonlinearProblem(SciMLBase.NonlinearFunction(residual), z0, q0)
 ```
 """
-function SciMLBase.NonlinearFunction(f::CasADiCodegen.Function; jac::Bool = true, options...)
+function SciMLBase.NonlinearFunction(f::CasADiNative.Function; jac::Bool = true, options...)
     arguments, value = vector_field("NonlinearFunction", f, 2)
     n = length(arguments)
     wrap(name, expression) = concrete(Call{n,Any}(inplace(name, arguments, expression)))
     SciMLBase.NonlinearFunction{true,SciMLBase.FullSpecialize}(wrap("residual", value);
-        jac = jac ? wrap("jac", CasADiCodegen.jacobian(value, arguments[1])) : nothing, options...)
+        jac = jac ? wrap("jac", CasADiNative.jacobian(value, arguments[1])) : nothing, options...)
 end
 
 """
-    SciMLBase.OptimizationFunction(objective::CasADiCodegen.Function, constraints = nothing; options...)
+    SciMLBase.OptimizationFunction(objective::CasADiNative.Function, constraints = nothing; options...)
 
 Make the SciML function of an optimization problem from the CasADi functions `objective(x)`
 or `objective(x, p)` and, if the problem has them, `constraints` with the same arguments.
@@ -616,28 +617,28 @@ Optimization.jl make it from `hess` and `cons_h`.
 # Examples
 ```julia
 x = SX.sym("x", 2)
-objective = CasADiCodegen.Function("cost", [x], [(x[1] - 1)^2 + x[2]^2])
-constraints = CasADiCodegen.Function("cons", [x], [x[1] + x[2]])
+objective = CasADiNative.Function("cost", [x], [(x[1] - 1)^2 + x[2]^2])
+constraints = CasADiNative.Function("cons", [x], [x[1] + x[2]])
 f = SciMLBase.OptimizationFunction(objective, constraints)
 problem = SciMLBase.OptimizationProblem(f, [0.0, 0.0]; lcons = [1.0], ucons = [1.0])
 ```
 """
-function SciMLBase.OptimizationFunction(objective::CasADiCodegen.Function, constraints::Union{Nothing,CasADiCodegen.Function} = nothing; options...)
+function SciMLBase.OptimizationFunction(objective::CasADiNative.Function, constraints::Union{Nothing,CasADiNative.Function} = nothing; options...)
     n = C.n_in(objective)
     @requires 1 <= n <= 2 && C.n_out(objective) == 1 && shape(C.sparsity_out(objective, 0)) == (1, 1) "OptimizationFunction: the objective must have 1 or 2 arguments and one number as its result"
     @requires C.size2(C.sparsity_in(objective, 0)) == 1 "OptimizationFunction: the unknown must be a column vector"
     arguments = symbols(objective)
     x = arguments[1]
-    cost = CasADiCodegen.densify(objective(arguments...))
+    cost = CasADiNative.densify(objective(arguments...))
     call(name, expression) = concrete(Call{n,Any}(inplace(name, arguments, expression)))
-    given = (; grad = call("grad", CasADiCodegen.gradient(cost, x)), hess = call("hess", CasADiCodegen.hessian(cost, x)))
+    given = (; grad = call("grad", CasADiNative.gradient(cost, x)), hess = call("hess", CasADiNative.hessian(cost, x)))
     if constraints !== nothing
         @requires C.n_in(constraints) == n && C.n_out(constraints) == 1 && C.size2(C.sparsity_out(constraints, 0)) == 1 &&
                   all(shape(C.sparsity_in(constraints, i)) == shape(C.sparsity_in(objective, i)) for i in 0:n-1) "OptimizationFunction: the constraints must be a column vector and have the arguments of the objective"
-        value = CasADiCodegen.densify(constraints(arguments...))
-        hessians = CasADiCodegen.Function("sciml_cons_h", arguments, [CasADiCodegen.densify(CasADiCodegen.hessian(value[j], x)) for j in 1:size(value, 1)])
+        value = CasADiNative.densify(constraints(arguments...))
+        hessians = CasADiNative.Function("sciml_cons_h", arguments, [CasADiNative.densify(CasADiNative.hessian(value[j], x)) for j in 1:size(value, 1)])
         cons_h = build_function(hessians; expression = Val{false})[2]
-        given = (; given..., cons = call("cons", value), cons_j = call("cons_j", CasADiCodegen.jacobian(value, x)), cons_h = Hessians{n,typeof(cons_h)}(cons_h))
+        given = (; given..., cons = call("cons", value), cons_j = call("cons_j", CasADiNative.jacobian(value, x)), cons_h = Hessians{n,typeof(cons_h)}(cons_h))
     end
     scalar = Scalar{n,Any}(inplace("cost", arguments, cost))
     SciMLBase.OptimizationFunction{true}(Scalar{n,typeof(scalar.g!)}(scalar.g!), SciMLBase.NoAD(); given..., options...)
@@ -651,7 +652,7 @@ function check_count(label, what, values, n)
 end
 
 """
-    SciMLBase.ODEProblem(I::CasADiCodegen.Function, x0, p = Float64[]; z0 = Float64[], u = Float64[], options...)
+    SciMLBase.ODEProblem(I::CasADiNative.Function, x0, p = Float64[]; z0 = Float64[], u = Float64[], options...)
 
 Make the SciML problem of the integrator `I` of CasADi (`cvodes`, `idas`, `rk` or
 `collocation`), with generated code for its right side and for the Jacobians of it.
@@ -683,7 +684,7 @@ problem = SciMLBase.ODEProblem(I, [1.0, 0.0, 0.0, 1.0], [1.0])      # I is a `cv
 solution = SciMLBase.solve(problem, Vern9(); abstol = 1e-13, reltol = 1e-13)
 ```
 """
-function SciMLBase.ODEProblem(I::CasADiCodegen.Function, x0::AbstractVector{<:Real}, p::AbstractVector{<:Real} = Float64[];
+function SciMLBase.ODEProblem(I::CasADiNative.Function, x0::AbstractVector{<:Real}, p::AbstractVector{<:Real} = Float64[];
                               z0::AbstractVector{<:Real} = Float64[], u::AbstractVector{<:Real} = Float64[], options...)
     model = G.integrator_model(I)
     label = "integrator \"$(model.name)\""
@@ -697,7 +698,7 @@ function SciMLBase.ODEProblem(I::CasADiCodegen.Function, x0::AbstractVector{<:Re
     controls = reshape(float(collect(u)), model.nu, intervals)
     callback = get(options, :callback, nothing)
     if model.events > 0
-        transition = CasADiCodegen.C.has_function(I, "transition") ? CasADiCodegen.C.get_function(I, "transition") : nothing
+        transition = CasADiNative.C.has_function(I, "transition") ? CasADiNative.C.get_function(I, "transition") : nothing
         events = G.event_functions(model, transition)
         emitted(g) = G.Emitted(G.build_function(g; expression = Val{false}, nonzeros = true), g, :nonzeros)
         rhs = model.nz == 0 ? G.RightSide(nothing) : G.emitted_right_side(model)
@@ -733,7 +734,7 @@ function control_changes(controls::Matrix{Float64}, times::Vector{Float64}, np::
 end
 
 """
-    SciMLBase.NonlinearProblem(R::CasADiCodegen.Function, z0, others...; options...)
+    SciMLBase.NonlinearProblem(R::CasADiNative.Function, z0, others...; options...)
 
 Make the SciML problem of the rootfinder `R` of CasADi (`newton`, `fast_newton` or
 `kinsol`), with generated code for the residual and for its Jacobian.
@@ -748,7 +749,7 @@ problem = SciMLBase.NonlinearProblem(R, [1.0], [1.0, 0.3])          # R(z0, p) i
 solution = SciMLBase.solve(problem, SimpleNewtonRaphson())
 ```
 """
-function SciMLBase.NonlinearProblem(R::CasADiCodegen.Function, z0::AbstractVector{<:Real}, others::AbstractVector{<:Real}...; options...)
+function SciMLBase.NonlinearProblem(R::CasADiNative.Function, z0::AbstractVector{<:Real}, others::AbstractVector{<:Real}...; options...)
     model = G.rootfinder_model(R)
     label = "rootfinder \"$(model.name)\""
     check_count(label, "the unknown", z0, model.n)
@@ -759,7 +760,7 @@ function SciMLBase.NonlinearProblem(R::CasADiCodegen.Function, z0::AbstractVecto
 end
 
 """
-    SciMLBase.OptimizationProblem(S::CasADiCodegen.Function, x0, p = Float64[]; lbx, ubx, lbg, ubg, options...)
+    SciMLBase.OptimizationProblem(S::CasADiNative.Function, x0, p = Float64[]; lbx, ubx, lbg, ubg, options...)
 
 Make the SciML problem of the solver `S` that `nlpsol` or `conic` of CasADi made, with
 generated code for the objective, the constraints and their derivatives (see
@@ -778,7 +779,7 @@ problem = SciMLBase.OptimizationProblem(S, [0.0, 0.0]; lbg = [1.0], ubg = [1.0])
 solution = SciMLBase.solve(problem, Ipopt.Optimizer())              # with OptimizationMOI.jl
 ```
 """
-function SciMLBase.OptimizationProblem(S::CasADiCodegen.Function, x0::AbstractVector{<:Real}, p::AbstractVector{<:Real} = Float64[];
+function SciMLBase.OptimizationProblem(S::CasADiNative.Function, x0::AbstractVector{<:Real}, p::AbstractVector{<:Real} = Float64[];
                                        lbx = nothing, ubx = nothing, lbg = nothing, ubg = nothing, options...)
     model = G.optimization_model(S)
     label = "solver \"$(model.name)\""

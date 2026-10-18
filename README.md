@@ -2,9 +2,10 @@
 
 [CasADi](https://web.casadi.org/) is a framework for symbolic modelling and
 algorithmic differentiation, designed primarily for nonlinear optimization and
-optimal control. CasADiCodegen.jl bundles the Julia front end distributed with CasADi and
-generates ordinary Julia functions from CasADi models, including derivatives
-computed by CasADi.
+optimal control. CasADiCodegen.jl generates ordinary Julia functions from CasADi
+models, including derivatives computed by CasADi. The models are written with
+[CasADiNative.jl](https://github.com/casadi/CasADiNative.jl), the official Julia
+front end of CasADi.
 
 Use CasADiCodegen.jl when you want to define a model with CasADi, or load one created in
 Python, MATLAB, or C++, and then run the model and its derivatives as Julia code.
@@ -17,6 +18,7 @@ CasADiCodegen.jl supports Julia 1.12 and 1.13. After you activate the environmen
 you want to use it, install the package directly from GitHub:
 
 ```julia-repl
+pkg> add https://github.com/casadi/CasADiNative.jl
 pkg> add https://github.com/EllissoideRotondo/CasADiCodegen.jl
 ```
 
@@ -26,11 +28,11 @@ Define a symbolic function and its gradient, then build Julia functions that
 evaluate both:
 
 ```julia
-using CasADiCodegen
+using CasADiNative, CasADiCodegen
 
 x = SX.sym("x", 2)
 y = x[1]^2 + sin(x[2])
-f = CasADiCodegen.Function("f", [x], [y, gradient(y, x)])
+f = CasADiNative.Function("f", [x], [y, gradient(y, x)])
 
 f_julia, f_julia! = build_function(f; expression = Val(false))
 value, derivative = f_julia([2.0, 0.0])
@@ -39,8 +41,8 @@ value       # [4.0]
 derivative  # [4.0, 1.0]
 ```
 
-`using CasADiCodegen` loads this Julia front end, including `SX`, `MX`, and symbolic
-operations such as `gradient` and `jacobian`. Write `CasADiCodegen.Function` explicitly
+`using CasADiNative` loads the Julia front end, including `SX`, `MX`, and symbolic
+operations such as `gradient` and `jacobian`. Write `CasADiNative.Function` explicitly
 because `Function` is already a Julia type.
 
 `expression = Val(false)` makes `build_function` return callable functions for the

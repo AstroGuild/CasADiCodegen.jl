@@ -1,21 +1,21 @@
 # Replace the solvers of CasADi
 
 A model that already exists often holds solver objects of CasADi itself: an
-integrator made with `CasADiCodegen.C.integrator(name, "cvodes", ...)`, a rootfinder, or a solver
+integrator made with `CasADiNative.C.integrator(name, "cvodes", ...)`, a rootfinder, or a solver
 of `nlpsol`. Generated code never calls CasADi, so such an object needs a solver
 of the SciML ecosystem. You need SciMLBase.jl and the package of the algorithm.
 
 The examples use an integrator `cvodes` for the planar two-body problem:
 
 ```@example solvers
-using CasADiCodegen
+using CasADiNative, CasADiCodegen
 using OrdinaryDiffEqVerner: Vern9
 import SciMLBase
 
 x, mu = MX.sym("x", 4), MX.sym("mu")
 r3 = (x[1]^2 + x[2]^2)^1.5
 ode = vertcat(x[3], x[4], -mu * x[1] / r3, -mu * x[2] / r3)
-I = CasADiCodegen.C.integrator("I", "cvodes", Dict("x" => x, "p" => mu, "ode" => ode), 0.0, [1.0, 2.0, 3.0])
+I = CasADiNative.C.integrator("I", "cvodes", Dict("x" => x, "p" => mu, "ode" => ode), 0.0, [1.0, 2.0, 3.0])
 nothing # hide
 ```
 
@@ -30,7 +30,7 @@ using CasADiCodegen: Solvers, Solver
 
 x0, p = MX.sym("x0", 4), MX.sym("p")
 final = I(Dict("x0" => x0, "p" => p))["xf"]                    # 4 by 3: one column per output time
-f = CasADiCodegen.Function("f", [x0, p], [final, jacobian(final[:, 3], x0)])
+f = CasADiNative.Function("f", [x0, p], [final, jacobian(final[:, 3], x0)])
 
 solvers = Solvers(ode = Solver(Vern9(); abstol = 1e-13, reltol = 1e-13))
 g, g! = build_function(f; expression = Val{false}, solvers)
@@ -53,7 +53,7 @@ function and the field of `Solvers` to set.
 integrator `R` by name, and a solver of `nlpsol`:
 
 ```julia
-R = CasADiCodegen.C.integrator("R", "rk", Dict("x" => x, "p" => mu, "ode" => ode), 0.0, 1.0)
+R = CasADiNative.C.integrator("R", "rk", Dict("x" => x, "p" => mu, "ode" => ode), 0.0, 1.0)
 solvers = Solvers(overrides = (Solver(R, Vern9(); abstol = 1e-12),))
 
 import Ipopt, OptimizationMOI
@@ -104,9 +104,9 @@ because the solver does not take dual numbers through an event.
 ```julia
 h, v, e = MX.sym("h"), MX.sym("v"), MX.sym("e")             # height, speed, restitution
 model = Dict("x" => vertcat(h, v), "p" => e, "ode" => vertcat(v, -9.81), "zero" => h)
-bounce = CasADiCodegen.C.Function("transition", Dict("x" => vertcat(h, v), "p" => e, "post_x" => vertcat(h, -e * v)),
-                           CasADiCodegen.C.event_in(), CasADiCodegen.C.event_out())
-ball = CasADiCodegen.C.integrator("ball", "cvodes", model, 0.0, [0.5, 1.0, 2.0], Dict("transition" => bounce))
+bounce = CasADiNative.C.Function("transition", Dict("x" => vertcat(h, v), "p" => e, "post_x" => vertcat(h, -e * v)),
+                           CasADiNative.C.event_in(), CasADiNative.C.event_out())
+ball = CasADiNative.C.integrator("ball", "cvodes", model, 0.0, [0.5, 1.0, 2.0], Dict("transition" => bounce))
 ```
 
 CasADi differentiates such an integrator by forward directions only, and the
@@ -118,10 +118,10 @@ Use directional derivatives with one direction per argument instead:
 
 ```julia
 s0, q = MX.sym("s0", 2), MX.sym("q")
-final = CasADiCodegen.C.vec(ball(Dict("x0" => s0, "p" => q))["xf"])
+final = CasADiNative.C.vec(ball(Dict("x0" => s0, "p" => q))["xf"])
 arguments = vertcat(s0, q)
-J = CasADiCodegen.C.jtimes(final, arguments, MX(CasADiCodegen.C.DM([Float64(i == j) for i in 1:3, j in 1:3])))
-f = CasADiCodegen.Function("f", [s0, q], [final, CasADiCodegen.C.densify(J)])
+J = CasADiNative.C.jtimes(final, arguments, MX(CasADiNative.C.DM([Float64(i == j) for i in 1:3, j in 1:3])))
+f = CasADiNative.Function("f", [s0, q], [final, CasADiNative.C.densify(J)])
 ```
 
 CasADi has no reverse mode through an integrator with events, and the derivatives

@@ -10,10 +10,10 @@ the prefix `CasADiCodegen.`.
 function spends its time on.
 
 ```@example inspect
-using CasADiCodegen
+using CasADiNative, CasADiCodegen
 
 x = SX.sym("x", 2)
-f = CasADiCodegen.Function("f", [x], [sqrt(x[1] - x[2]) * sin(x[1]) + x[2]^2])
+f = CasADiNative.Function("f", [x], [sqrt(x[1] - x[2]) * sin(x[1]) + x[2]^2])
 CasADiCodegen.instruction_histogram(f)
 ```
 

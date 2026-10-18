@@ -1,17 +1,17 @@
 # Integrate a differential equation
 
-[`CasADiCodegen.integrator`](@ref) makes a CasADi function that integrates an ordinary
+[`CasADiNative.integrator`](@ref) makes a CasADi function that integrates an ordinary
 differential equation with a solver of the SciML ecosystem. CasADi differentiates it
 to any order, and the generated code calls the solver directly.
 
 Add a solver package to your environment, for example OrdinaryDiffEqVerner.jl.
 The bare name `integrator` is the function of this page, which takes a SciML
 algorithm. The integrators of CasADi itself (`"cvodes"`, `"rk"`, ...) come from
-`CasADiCodegen.C.integrator`; see [Replace the solvers of CasADi](@ref). The examples use the
+`CasADiNative.C.integrator`; see [Replace the solvers of CasADi](@ref). The examples use the
 planar two-body problem:
 
 ```@example ode
-using CasADiCodegen
+using CasADiNative, CasADiCodegen
 using OrdinaryDiffEqVerner: Vern9
 
 x, mu = MX.sym("x", 4), MX.sym("mu")
@@ -32,7 +32,7 @@ expression that the solver integrates along the solution.
 F = integrator("F", Vern9(), model, 0.0, 3.0; abstol = 1e-13, reltol = 1e-13)
 
 x0, p = MX.sym("x0", 4), MX.sym("p")
-f = CasADiCodegen.Function("f", [x0, p], [F(x0, p), jacobian(F(x0, p), x0)])
+f = CasADiNative.Function("f", [x0, p], [F(x0, p), jacobian(F(x0, p), x0)])
 g, g! = build_function(f; expression = Val{false})
 xf, stm = g([1.0, 0.0, 0.0, 1.0], [1.0])
 xf
@@ -55,7 +55,7 @@ With `"quad"`, each function returns the quadratures as a second result.
 ```@example ode
 G = integrator("G", Vern9(), model; abstol = 1e-13, reltol = 1e-13)
 t0, tf = MX.sym("t0"), MX.sym("tf")
-h = CasADiCodegen.Function("h", [x0, p, t0, tf], [jacobian(G(x0, p, t0, tf), tf)])
+h = CasADiNative.Function("h", [x0, p, t0, tf], [jacobian(G(x0, p, t0, tf), tf)])
 build_function(h; expression = Val{false})[1]([1.0, 0.0, 0.0, 1.0], [1.0], [0.0], [3.0])
 ```
 
@@ -71,7 +71,7 @@ once.
 
 ```@example ode
 A = integrator("A", Vern9(), model, 0.0, 3.0; adjoint = true, abstol = 1e-13, reltol = 1e-13)
-cost = CasADiCodegen.Function("cost", [x0, p], [gradient(CasADiCodegen.C.sumsqr(A(x0, p)), vertcat(x0, p))])
+cost = CasADiNative.Function("cost", [x0, p], [gradient(CasADiNative.C.sumsqr(A(x0, p)), vertcat(x0, p))])
 build_function(cost; expression = Val{false})[1]([1.0, 0.0, 0.0, 1.0], [1.0])
 ```
 
@@ -139,6 +139,6 @@ measured once).
 
 ```julia
 X = MX.sym("X", 4, 20)
-ends = CasADiCodegen.C.map(F, 20)(X, CasADiCodegen.C.repmat(p, 1, 20))
-f = CasADiCodegen.Function("shoot", [X, p], [ends, jacobian(ends, X)])
+ends = CasADiNative.C.map(F, 20)(X, CasADiNative.C.repmat(p, 1, 20))
+f = CasADiNative.Function("shoot", [X, p], [ends, jacobian(ends, X)])
 ```

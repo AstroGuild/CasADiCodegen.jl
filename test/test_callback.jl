@@ -28,7 +28,7 @@ pull2(r, m) = ([0.0 m[1]; 0.0 0.0; m[1] 0.0; 0.0 2.0], [r[2]; 0.0; r[1]; 0.0;;],
 end
 
 struct PlainCallback <: CasadiCallback end
-CasADiCodegen.cb_eval(::PlainCallback, arg) = [arg[1]]
+CasADiNative.cb_eval(::PlainCallback, arg) = [arg[1]]
 
 const DRAG_X = [0.7, -1.3, 0.4]
 
@@ -38,7 +38,7 @@ emitted(f, res, arg; kwargs...) = build_function(f; nonzeros = true, expression 
     drag = callback(CallbackModels.drag, "drag", (3,), (2,))
     @test C.nonzeros(drag(C.DM(DRAG_X))) == CallbackModels.drag(DRAG_X)
     v = MX.sym("v", 3)
-    f = CasADiCodegen.Function("f", [v], [2 * drag(v * 3)])
+    f = CasADiNative.Function("f", [v], [2 * drag(v * 3)])
     @test C.nonzeros(f(C.DM(DRAG_X))) == 2 * CallbackModels.drag(3 * DRAG_X)
     @test emitted(f, [zeros(2)], (DRAG_X,))[1] == 2 * CallbackModels.drag(3 * DRAG_X)
     @test emitted(f, [zeros(2)], (DRAG_X,); expand = false, chunk_size = 1)[1] == 2 * CallbackModels.drag(3 * DRAG_X)
@@ -48,8 +48,8 @@ end
     mix = callback(CallbackModels.mix, "mix", ((2, 3), 3), (2, 1))
     A, v = MX.sym("A", 2, 3), MX.sym("v", 3)
     both = mix(A, v)
-    f = CasADiCodegen.Function("f", [A, v], [both[1] + both[2]])
-    g = CasADiCodegen.Function("g", [A, v], [both[2] * 2])          # the first result is not read
+    f = CasADiNative.Function("f", [A, v], [both[1] + both[2]])
+    g = CasADiNative.Function("g", [A, v], [both[2] * 2])          # the first result is not read
     M = [1.0 2.0 3.0; -1.0 0.5 2.0]
     expected = CallbackModels.mix(M, DRAG_X)
     @test emitted(f, [zeros(2)], (vec(M), DRAG_X))[1] == expected[1] .+ expected[2]
@@ -60,7 +60,7 @@ end
 @testset "Jacobian from a Julia function" begin
     drag = callback(CallbackModels.drag, "drag", (3,), (2,); jacobian = CallbackModels.drag_jacobian)
     v = MX.sym("v", 3)
-    f = CasADiCodegen.Function("f", [v], [jacobian(drag(2 * v), v)])
+    f = CasADiNative.Function("f", [v], [jacobian(drag(2 * v), v)])
     expected = 2 * CallbackModels.drag_jacobian(2 * DRAG_X)
     @test reshape(C.nonzeros(f(C.DM(DRAG_X))), 2, 3) == expected
     @test reshape(emitted(f, [zeros(6)], (DRAG_X,))[1], 2, 3) == expected
@@ -70,16 +70,16 @@ end
     drag = callback(CallbackModels.drag, "drag", (3,), (2,); jacobian = ADTypes.AutoForwardDiff())
     v = MX.sym("v", 3)
     y = drag(v)
-    f = CasADiCodegen.Function("f", [v], [jacobian(y, v)])
+    f = CasADiNative.Function("f", [v], [jacobian(y, v)])
     @test reshape(emitted(f, [zeros(6)], (DRAG_X,))[1], 2, 3) ≈ CallbackModels.drag_jacobian(DRAG_X)
     @test reshape(C.nonzeros(f(C.DM(DRAG_X))), 2, 3) ≈ CallbackModels.drag_jacobian(DRAG_X)
     # Second derivatives: the backend differentiates its own Jacobian.
-    h = CasADiCodegen.Function("h", [v], [jacobian(jacobian(y[1], v), v)])
+    h = CasADiNative.Function("h", [v], [jacobian(jacobian(y[1], v), v)])
     x = DRAG_X
     @test reshape(emitted(h, [zeros(9)], (x,))[1], 3, 3) ≈ [2x[2] 2x[1] 0; 2x[1] 0 0; 0 0 0]
     mix = callback(CallbackModels.mix, "mix", ((2, 3), 3), (2, 1); jacobian = ADTypes.AutoForwardDiff())
     A = MX.sym("A", 2, 3)
-    m = CasADiCodegen.Function("m", [A, v], [jacobian(mix(A, v)[1], v), jacobian(mix(A, v)[2], A)])
+    m = CasADiNative.Function("m", [A, v], [jacobian(mix(A, v)[1], v), jacobian(mix(A, v)[2], A)])
     M = [1.0 2.0 3.0; -1.0 0.5 2.0]
     r = emitted(m, [zeros(6), zeros(6)], (vec(M), x))
     @test reshape(r[1], 2, 3) ≈ M && r[2] ≈ fill(x[1], 6)
@@ -92,7 +92,7 @@ end
     t = MX.sym("t")
     y = curve(2 * t)
     orders = [y, jacobian(y, t), jacobian(jacobian(y, t), t), jacobian(jacobian(jacobian(y, t), t), t)]
-    f = CasADiCodegen.Function("f", [t], orders)
+    f = CasADiNative.Function("f", [t], orders)
     tv = 0.3
     expected = [M.curve([2tv]), 2 * M.curve1([2tv]), 4 * M.curve2([2tv]), 8 * M.curve3([2tv])]
     @test all(C.nonzeros(r) ≈ e for (r, e) in zip(f(C.DM(tv)), expected))
@@ -108,7 +108,7 @@ end
     pull = callback(M.pull, "pull", (2, 1), (2,); jacobian = (M.pull1, M.pull2))
     r, m = MX.sym("r", 2), MX.sym("m")
     z = pull(r, m)
-    h = CasADiCodegen.Function("h", [r, m], [jacobian(jacobian(z, r), r), jacobian(jacobian(z, r), m), jacobian(jacobian(z, m), r)])
+    h = CasADiNative.Function("h", [r, m], [jacobian(jacobian(z, r), r), jacobian(jacobian(z, r), m), jacobian(jacobian(z, m), r)])
     rv, mv = [0.4, -1.1], [2.5]
     full(x) = M.pull(x[1:2], x[3:3])
     H = ForwardDiff.jacobian(x -> vec(ForwardDiff.jacobian(full, x)), [rv; mv])    # rows: vec of the 2 by 3 Jacobian
@@ -117,7 +117,7 @@ end
     # The backend gives the same second derivatives.
     auto = callback(M.pull, "auto", (2, 1), (2,); jacobian = ADTypes.AutoForwardDiff())
     za = auto(r, m)
-    ha = CasADiCodegen.Function("ha", [r, m], [jacobian(jacobian(za, r), r), jacobian(jacobian(za, r), m), jacobian(jacobian(za, m), r)])
+    ha = CasADiNative.Function("ha", [r, m], [jacobian(jacobian(za, r), r), jacobian(jacobian(za, r), m), jacobian(jacobian(za, m), r)])
     @test all(emitted(ha, [zeros(8), zeros(4), zeros(4)], (rv, mv)) .≈ got)
 end
 
@@ -128,7 +128,7 @@ end
     x, t, A = MX.sym("x", 3), MX.sym("t"), MX.sym("A", 2, 3)
     c = curve(2 * t)
     y = LinearAlgebra.dot(c, x) * x + sin(c) + mix(A, curve(t) + x)[2] * x
-    f = CasADiCodegen.Function("f", [x, t, A], [y, jacobian(y, vertcat(x, t)), mix(A, x)[1]])
+    f = CasADiNative.Function("f", [x, t, A], [y, jacobian(y, vertcat(x, t)), mix(A, x)[1]])
     xv, tv, Av = DRAG_X, [0.3], [1.0 2.0 3.0; -1.0 0.5 2.0]
     expected = casadi_nonzeros(f(C.DM(xv), C.DM(tv), C.DM(Av)))
     blank() = [zeros(length(e)) for e in expected]
@@ -160,7 +160,7 @@ end
     @test all(Base.invokelatest((r, a) -> src.Gen.f_nonzeros!(r, a), blank(), (xv, tv, vec(Av))) .≈ expected)
     # The Julia function keeps its own checks in every kind of code.
     guarded = callback(M.guarded, "guarded", (1,), (1,))
-    h = CasADiCodegen.Function("h", [t], [guarded(t) + t])
+    h = CasADiNative.Function("h", [t], [guarded(t) + t])
     for kwargs in ((;), (; expand = false))
         @test emitted(h, [zeros(1)], ([0.5],); kwargs...)[1] == [1.5]
         @test_throws DomainError emitted(h, [zeros(1)], ([2.0],); kwargs...)
@@ -170,7 +170,7 @@ end
 @testset "every form of the code calls the Julia function" begin
     drag = callback(CallbackModels.drag, "drag", (3,), (2,); jacobian = CallbackModels.drag_jacobian)
     v = MX.sym("v", 3)
-    f = CasADiCodegen.Function("f", [v], [drag(v), jacobian(drag(v), v)])
+    f = CasADiNative.Function("f", [v], [drag(v), jacobian(drag(v), v)])
     expected = [CallbackModels.drag(DRAG_X), vec(CallbackModels.drag_jacobian(DRAG_X))]
     mod = Module()
     Core.eval(mod, build_function(f; nonzeros = true))
@@ -178,7 +178,7 @@ end
     text = sprint(io -> generate_julia(f, io; module_name = :Gen))
     @test occursin("checked(Main.CallbackModels.drag,", text) && occursin("checked(Main.CallbackModels.drag_jacobian,", text)
     unit = callback(LinearAlgebra.normalize, "unit", (3,), (3,))
-    text = sprint(io -> generate_julia(CasADiCodegen.Function("u", [v], [unit(v)]), io))
+    text = sprint(io -> generate_julia(CasADiNative.Function("u", [v], [unit(v)]), io))
     @test occursin("import LinearAlgebra", text) && occursin("checked(LinearAlgebra.normalize,", text)
 end
 
@@ -189,7 +189,7 @@ end
     pause = callback(v -> (yield(); 2 .* v), "pause", (3,), (3,))
     v = MX.sym("v", 3)
     a = sin(v)
-    f = CasADiCodegen.Function("f", [v], [3 * a + C.times(pause(a), a)])
+    f = CasADiNative.Function("f", [v], [3 * a + C.times(pause(a), a)])
     inputs = [DRAG_X .+ k for k in 1:8]
     for kwargs in ((; expand = false), (; chunk_size = 2))
         @test occursin("workspace", string(build_function(f; nonzeros = true, kwargs...)))
@@ -202,15 +202,15 @@ end
 @testset "limits of callbacks are named" begin
     v = MX.sym("v", 3)
     anonymous = callback(v -> 2 .* v, "anonymous", (3,), (3,))
-    f = CasADiCodegen.Function("f", [v], [anonymous(v)])
+    f = CasADiNative.Function("f", [v], [anonymous(v)])
     @test emitted(f, [zeros(3)], (DRAG_X,))[1] == 2 .* DRAG_X
     @test_throws "named function" generate_julia(f, IOBuffer())
     short = callback(v -> [1.0], "short", (3,), (2,))
-    @test_throws DimensionMismatch emitted(CasADiCodegen.Function("s", [v], [short(v)]), [zeros(2)], (DRAG_X,))
-    plain = CasADiCodegen.Function(callback(PlainCallback(); name = "plain"))
+    @test_throws DimensionMismatch emitted(CasADiNative.Function("s", [v], [short(v)]), [zeros(2)], (DRAG_X,))
+    plain = CasADiNative.Function(callback(PlainCallback(); name = "plain"))
     s = MX.sym("s")
     # A callback made with the type of the front end has no record of its Julia function: generated code cannot call it.
-    @test_throws "callback of a subtype of CasadiCallback" emitted(CasADiCodegen.Function("p", [s], [2 * plain(s)]), [zeros(1)], ([1.5],))
+    @test_throws "callback of a subtype of CasadiCallback" emitted(CasADiNative.Function("p", [s], [2 * plain(s)]), [zeros(1)], ([1.5],))
     @test_throws ArgumentError callback(sin, "bad name", (1,), (1,))
     @test_throws ArgumentError callback(sin, "shape", ((1, 2, 3),), (1,))
 end
@@ -219,7 +219,7 @@ end
     runs = Ref(0)
     counted = callback(v -> (runs[] += 1; [v[1]^2, v[2]]), "counted", (2,), (2,))
     a, c = MX.sym("a", 2), MX.sym("c")
-    f = CasADiCodegen.Function("f", [c, a], [C.if_else(c > 0, counted(a), 2 * a, true)])
+    f = CasADiNative.Function("f", [c, a], [C.if_else(c > 0, counted(a), 2 * a, true)])
     g = build_function(f; nonzeros = true, expression = Val{false})
     @test g([zeros(2)], ([0.0], [3.0, 4.0])) == [[6.0, 8.0]]
     @test runs[] == 0

@@ -18,7 +18,7 @@ compiled_for(g, types) = any(mi -> mi.specTypes <: Tuple{typeof(g),types...}, It
     directory = mktempdir()
     x, p = SX.sym("x", 3), SX.sym("p", 2, 2)
     y = vertcat(sin(x[1]) * p[1, 1] + x[3], x[2]^2 * p[2, 2])
-    f = CasADiCodegen.Function("f", [x, p], [y, jacobian(y, x)])
+    f = CasADiNative.Function("f", [x, p], [y, jacobian(y, x)])
     g, g! = build_function(f; expression = Val{false})
     h, h! = build_function(f; expression = Val{false}, cache = directory)
     packages = readdir(directory)
@@ -50,10 +50,10 @@ compiled_for(g, types) = any(mi -> mi.specTypes <: Tuple{typeof(g),types...}, It
     compiled_files(g) = sort!([(file, stat(file).inode) for file in Base.find_all_in_cache_path(Base.PkgId(parentmodule(parentmodule(g))))])
     before = compiled_files(h!)
     script = """
-        using CasADiCodegen
+        using CasADiNative, CasADiCodegen
         x, p = SX.sym("x", 3), SX.sym("p", 2, 2)
         y = vertcat(sin(x[1]) * p[1, 1] + x[3], x[2]^2 * p[2, 2])
-        f = CasADiCodegen.Function("f", [x, p], [y, jacobian(y, x)])
+        f = CasADiNative.Function("f", [x, p], [y, jacobian(y, x)])
         h, h! = build_function(f; expression = Val{false}, cache = $(repr(directory)))
         print(length(readdir($(repr(directory)))), " ", Base.invokelatest(h, $xv, $pv)[1] == $(g(xv, pv)[1]))
         """
@@ -68,7 +68,7 @@ end
     directory = mktempdir()
     len = callback(LinearAlgebra.norm, "len", (3,), (1,))
     v = MX.sym("v", 3)
-    f = CasADiCodegen.Function("f", [v], [len(2 * v) + v[1]])
+    f = CasADiNative.Function("f", [v], [len(2 * v) + v[1]])
     n = build_function(f; expression = Val{false}, cache = directory, nonzeros = true)
     @test compiled_for(n, (Vector{Vector{Float64}}, Tuple{Vector{Float64}}))
     @test Base.invokelatest(n, [zeros(1)], ([3.0, 0.0, 4.0],)) == [[13.0]]
@@ -78,16 +78,16 @@ end
 
 @testset "cache: wrong use" begin
     x = SX.sym("x", 2)
-    f = CasADiCodegen.Function("f", [x], [x[1] * x[2]])
+    f = CasADiNative.Function("f", [x], [x[1] * x[2]])
     directory = mktempdir()
     @test_throws ArgumentError build_function(f; cache = directory)                 # an expression has no cache
     local_function = callback(v -> [v[1]], "local", (2,), (1,))
     v = MX.sym("v", 2)
-    @test_throws ArgumentError build_function(CasADiCodegen.Function("f", [v], [local_function(v)]);
+    @test_throws ArgumentError build_function(CasADiNative.Function("f", [v], [local_function(v)]);
                                               expression = Val{false}, cache = directory)
     main = callback(CacheModels.drag, "drag", (3,), (2,))          # a function of Main is not in a package
     w = MX.sym("w", 3)
-    @test_throws ArgumentError build_function(CasADiCodegen.Function("f", [w], [main(w)]); expression = Val{false}, cache = directory)
+    @test_throws ArgumentError build_function(CasADiNative.Function("f", [w], [main(w)]); expression = Val{false}, cache = directory)
     @test isempty(readdir(directory))
     @test startswith(CasADiCodegen.Codegen.cache_directory(true), first(DEPOT_PATH))
     @test CasADiCodegen.Codegen.cache_directory("somewhere") == "somewhere"
@@ -115,11 +115,11 @@ written_nonzeros(owner, name, f, arguments) =
     y, z, a = SX.sym("y", 2), MX.sym("z"), MX.sym("a")
     swing = Dict("x" => y, "ode" => vertcat([y[2], -y[1]]), "zero" => y[1])
     E = integrator("WE", Vern9(), swing; adjoint = true, direction = -1, TIGHT...)
-    root = rootfinder("WR", SimpleNewtonRaphson(), CasADiCodegen.Function("cube", [z, a], [z^3 + z - a]); abstol = 1e-13)
+    root = rootfinder("WR", SimpleNewtonRaphson(), CasADiNative.Function("cube", [z, a], [z^3 + z - a]); abstol = 1e-13)
     y0 = MX.sym("y0", 2)
     xe, te = E(y0, MX(0.0), MX(50.0))
     solved = root(MX(1.0), te + xe[2])
-    g = CasADiCodegen.Function("mixed", [y0], [xe, te, solved, gradient(solved, y0)])
+    g = CasADiNative.Function("mixed", [y0], [xe, te, solved, gradient(solved, y0)])
     for expand in (true, false)
         text = sprint(io -> generate_julia(g, io; module_name = :Mixed, name = :mixed!, expand))
         src = Module()
@@ -133,9 +133,9 @@ written_nonzeros(owner, name, f, arguments) =
     x, p = SX.sym("x", 1), SX.sym("p", 1)
     H = CasADiCodegen.Codegen.ode_integrator("WH", Dict("x" => x, "p" => p, "ode" => -p * x), 0.0, 1.0, local_solver)
     x0, q = MX.sym("x0", 1), MX.sym("q", 1)
-    @test_throws "named function" generate_julia(CasADiCodegen.Function("f", [x0, q], [H(x0, q)]), IOBuffer())
+    @test_throws "named function" generate_julia(CasADiNative.Function("f", [x0, q], [H(x0, q)]), IOBuffer())
     odd = integrator("WO", Vern9(), delete!(copy(swing), "zero"), 0.0, 1.0; TIGHT..., callback = Ref(1))
-    @test_throws "a source file cannot hold the value" generate_julia(CasADiCodegen.Function("f", [y0], [odd(y0)]), IOBuffer())
+    @test_throws "a source file cannot hold the value" generate_julia(CasADiNative.Function("f", [y0], [odd(y0)]), IOBuffer())
 end
 
 @testset "cache: a function with an integrator" begin

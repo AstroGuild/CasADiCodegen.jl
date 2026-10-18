@@ -854,7 +854,7 @@ function copy_maps(node, slots, adding::Bool)
 end
 
 """
-    MXAlgorithm(f::CasADiCodegen.Function; expand = false)
+    MXAlgorithm(f::CasADiNative.Function; expand = false)
 
 Copy the instruction list of the matrix (MX) function `f`. A function that `f`
 calls is copied once. With `expand = true`, a called MX function becomes a
@@ -944,7 +944,7 @@ helper `low`).
 const LOOKUP_MODES = ("linear", "exact", "binary")
 
 """
-    interpolant_function(f) -> CasADiCodegen.Function
+    interpolant_function(f) -> CasADiNative.Function
 
 Return an MX function with the inputs and the results of the interpolant `f`,
 made of nodes that this package has code for. A CasADi interpolant has no
@@ -1051,7 +1051,7 @@ function forward_columns(f::C.Function, inputs::Vector{MX}, results::Vector{MX},
 end
 
 """
-    integrator_results(f, inputs, lists, count, nadj, outer) -> CasADiCodegen.Function
+    integrator_results(f, inputs, lists, count, nadj, outer) -> CasADiNative.Function
 
 Return a function with the inputs and the results of the CasADi integrator
 `f`, built from a written integration. `lists` holds the states, the algebraic
@@ -1098,7 +1098,7 @@ Class names of the fixed-step CasADi integrators.
 const FIXED_STEP_CLASSES = ("RungeKutta", "Collocation")
 
 """
-    fixed_step_function(f) -> CasADiCodegen.Function or nothing
+    fixed_step_function(f) -> CasADiNative.Function or nothing
 
 Return an MX function with the inputs and the results of the fixed-step CasADi
 integrator `f` (`rk` or `collocation`), or `nothing` for an integrator with
@@ -1206,7 +1206,7 @@ functions in the table are made during the read and have no other owner.
 callee_copy(g::C.Function, expand::Bool, callees) = first(get!(() -> (read_callee(g, expand, callees), g), callees, C.__hash__(g)))
 
 """
-    fitted(g, switch) -> CasADiCodegen.Function
+    fitted(g, switch) -> CasADiNative.Function
 
 Return the branch `g` of a switch with the sparsity patterns of the switch:
 `g` itself when they agree, else a function that calls `g` and projects.

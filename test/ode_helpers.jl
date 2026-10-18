@@ -33,7 +33,7 @@ function with_derivatives(F, order)
     outputs = [xf]
     order >= 1 && append!(outputs, [jacobian(xf, x0), jacobian(xf, p)])
     order >= 2 && push!(outputs, jacobian(jacobian(xf, x0), x0))
-    CasADiCodegen.Function("d", [x0, p], outputs)
+    CasADiNative.Function("d", [x0, p], outputs)
 end
 
 cvodes_call(R) = (x0, p) -> R(Dict("x0" => x0, "p" => p))["xf"]

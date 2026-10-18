@@ -5,8 +5,10 @@
 # integer and a whole Float64. Thus `"number_of_finite_elements" => 7` reaches
 # CasADi as `true`, that is 1, and `"margin" => 2.0` as 1.0. A `GenericType` that
 # Julia gives is passed as it is, so each number becomes a `GenericType` of its own
-# type here, made by the deserializer of CasADi. The functions of the front end
-# get this conversion when the module is included (see `typed_front_end`).
+# type here, made by the deserializer of CasADi. CasADiNative.jl passes the Dict
+# to the wrapper as it is, so this package gives each function of `C` that takes
+# options a method whose argument of options is an `AbstractDict`: it converts
+# the Dict and calls the method of the front end (see `typed_methods`).
 
 # The codes of `casadi::TypeID` for the types that a number of Julia can have. A
 # vector of vectors needs none: the front end gives it the right type.
@@ -73,51 +75,56 @@ typed_options(options::AbstractDict) = Dict{String,Any}(string(k) => option_valu
 option_argument(name) = name === :opts || endswith(string(name), "options")
 
 argument_name(a::Symbol) = a
-argument_name(a::Expr) = Meta.isexpr(a, (:(::), :kw)) ? argument_name(a.args[1]) : nothing
+argument_name(a::Expr) = Meta.isexpr(a, :(::)) && length(a.args) == 2 ? a.args[1] : nothing
+argument_type(a) = Meta.isexpr(a, :(::)) ? a.args[end] : :Any
 
-function call_signature(signature)
-    while Meta.isexpr(signature, :where)
-        signature = signature.args[1]
-    end
-    Meta.isexpr(signature, :call) ? signature : nothing
-end
+# A type of the generated module as an expression that names its bindings in `C`.
+in_front_end(ex::Symbol) = isdefined(C, ex) ? GlobalRef(C, ex) : ex
+in_front_end(ex::Expr) = Expr(ex.head, map(in_front_end, ex.args)...)
+in_front_end(ex) = ex
 
 """
-    typed_definitions!(ex, count::Ref{Int}) -> ex
+    option_signatures(path) -> Vector{Expr}
 
-Rewrite each method definition in `ex` that has an argument of options, so that
-its body first converts that argument with `typed_options`; `count` is increased
-by the number of rewritten methods.
+The signatures of the methods in the generated module at `path` that have an argument of
+options, as `:call` expressions.
 """
-function typed_definitions!(ex, count::Ref{Int})
-    ex isa Expr || return ex
-    if Meta.isexpr(ex, (:(=), :function)) && (signature = call_signature(ex.args[1])) !== nothing
-        names = filter(option_argument, filter(!isnothing, map(argument_name, signature.args[2:end])))
-        if !isempty(names)
-            ex.args[2] = Expr(:block, (:($n = $typed_options($n)) for n in names)..., ex.args[2])
-            count[] += 1
+function option_signatures(path)
+    found = Expr[]
+    function walk(ex)
+        ex isa Expr || return
+        if Meta.isexpr(ex, (:(=), :function)) && Meta.isexpr(ex.args[1], :call)
+            any(option_argument, filter(!isnothing, map(argument_name, ex.args[1].args[2:end]))) && push!(found, ex.args[1])
+            return
         end
-        return ex
+        foreach(walk, ex.args)
     end
-    foreach(a -> typed_definitions!(a, count), ex.args)
-    ex
+    walk(Meta.parseall(read(path, String)))
+    length(found) > 100 || throw(AssertionError("only $(length(found)) functions of the front end take options; the front end has changed"))
+    found
 end
 
 """
-    typed_front_end(ex)
+    typed_methods(signature) -> Vector{Expr}
 
-The expression `ex` of the convenience layer of the front end, with the include of
-the generated module `casadi` given `typed_definitions!` as its `mapexpr`.
+The definitions of the methods that convert the Dicts of options of the method of `C` with
+`signature` and then call that method: one method for each nonempty set of its arguments of
+options, with these arguments typed `AbstractDict`.
 """
-function typed_front_end(ex)
-    Meta.isexpr(ex, :call) && ex.args[1] === :include && length(ex.args) == 2 || return ex
-    Expr(:call, :include, typed_module, ex.args[2])
-end
-
-function typed_module(ex)
-    Meta.isexpr(ex, :module) || return ex
-    count = Ref(0)
-    typed_definitions!(ex, count)
-    count[] > 100 || throw(AssertionError("only $(count[]) functions of the front end take options; the front end has changed"))
-    ex
+function typed_methods(signature)
+    f = getfield(C, signature.args[1])
+    arguments = signature.args[2:end]
+    names = [something(argument_name(a), Symbol("argument", i)) for (i, a) in enumerate(arguments)]
+    original = Core.eval(@__MODULE__, :(Tuple{$(map(in_front_end ∘ argument_type, arguments)...)}))
+    which(f, original).sig == Tuple{Core.Typeof(f), original.parameters...} ||
+        throw(AssertionError("the generated module has no method $(signature)"))
+    options = findall(option_argument, names)
+    subsets = [options[[isodd(s >> (i - 1)) for i in eachindex(options)]] for s in 1:2^length(options)-1]
+    map(subsets) do typed
+        narrowed = [i in typed ? :($(names[i])::AbstractDict) : :($(names[i])::$(in_front_end(argument_type(arguments[i])))) for i in eachindex(arguments)]
+        values = [i in typed ? :($typed_options($(names[i]))) : names[i] for i in eachindex(arguments)]
+        :(function $C.$(signature.args[1])($(narrowed...))
+              invoke($f, $original, $(values...))
+          end)
+    end
 end

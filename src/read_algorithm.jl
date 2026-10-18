@@ -11,7 +11,7 @@ function op_names()
 end
 
 """
-    Algorithm(f::CasADiCodegen.Function)
+    Algorithm(f::CasADiNative.Function)
 
 Copy the instruction list of the scalar (SX) function `f`, one instruction per
 CasADi instruction. `f` must be an SX function with no free symbols.

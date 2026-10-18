@@ -1,28 +1,28 @@
 """
     CasADiCodegen
 
-The official CasADi front end for Julia, plus Julia code generation.
+Julia code generation for CasADi functions.
 
-The module includes the SWIG-generated front end that ships with CasADi;
-`CasADiCodegen.C` is the generated module. Its only change is that a number in a Dict
-of options reaches CasADi with its type, where the generated code makes it a `bool`. The package adds
-`build_function` and `generate_julia`, which turn a CasADi `Function` into
-plain Julia code.
+The package works with the official CasADi front end for Julia, CasADiNative.jl.
+`build_function` and `generate_julia` turn a CasADi `Function` into plain Julia code.
+Loading the package also makes a number in a Dict of options reach CasADi with
+its type, where the front end makes it a `bool`.
 """
 module CasADiCodegen
 
-import CasADi_jll
+import CasADiNative
 import CasADiSWIG_jll
 import Libdl
 using PrecompileTools: @compile_workload
 
-# The official front end: the generated module `casadi`, its alias `C`, the
-# convenience layer and its exports (`SX`, `MX`, `jacobian`, ...). Its functions
-# convert the numbers in a Dict of options first (see options.jl).
+# The generated module of the front end, whose functions take the Dicts of options.
+const C = CasADiNative.C
+
 include("options.jl")
-Base.include_dependency(CasADiSWIG_jll.casadi_native_body)
 Base.include_dependency(CasADiSWIG_jll.casadi_jl)
-include(typed_front_end, CasADiSWIG_jll.casadi_native_body)
+for signature in option_signatures(CasADiSWIG_jll.casadi_jl), definition in typed_methods(signature)
+    Core.eval(@__MODULE__, definition)
+end
 
 include("codegen.jl")
 

@@ -132,7 +132,7 @@ end
         script = """
             include($(repr(path)))
             res = Gen.f_nonzeros!([zeros(2)], ([0.3, -1.7], [2.5]))
-            isdefined(Main, :CasADiCodegen) && error("CasADi was loaded")
+            (isdefined(Main, :CasADiCodegen) || isdefined(Main, :CasADiNative)) && error("CasADi was loaded")
             Gen.NNZ_IN == (2, 1) && Gen.NNZ_OUT == (2,) || error("bad metadata")
             Gen.SPARSITY_OUT[1] == (2, 1, [1, 3], [1, 2]) || error("bad sparsity")
             isdefined(Gen, :NaNMath) || error("the module must load NaNMath for sin")
@@ -203,7 +203,7 @@ end
     for _ in 1:100
         y = [sin(y[1]) * y[2] + y[4]; y[3]^2 / (1 + y[1]^2); cos(y[4] * y[2]); y[1] * y[4] - y[2]] / 2
     end
-    f = CasADiCodegen.Function("f", [x], [y])
+    f = CasADiNative.Function("f", [x], [y])
     alg = Algorithm(f)
     @test size < length(alg.instructions) <= limit
     @test !occursin("_chunk", string(build_function(alg; nonzeros = true)))

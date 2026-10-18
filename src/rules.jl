@@ -20,7 +20,7 @@ end
 Base.show(io::IO, d::Differentiable) = print(io, "the differentiable function \"", C.name(d.f), "\"")
 
 """
-    differentiable(f::CasADiCodegen.Function; options...) -> Differentiable
+    differentiable(f::CasADiNative.Function; options...) -> Differentiable
 
 Make the CasADi function `f` a Julia function with forward and reverse rules for
 ChainRulesCore.jl. A package for automatic differentiation that reads those rules, such as
@@ -34,11 +34,11 @@ first use. See [Use the generated derivatives from an AD package](@ref).
 
 # Examples
 ```jldoctest
-julia> using CasADiCodegen
+julia> using CasADiNative, CasADiCodegen
 
 julia> x = SX.sym("x", 2);
 
-julia> f = CasADiCodegen.Function("f", [x], [x[1] * sin(x[2])]);
+julia> f = CasADiNative.Function("f", [x], [x[1] * sin(x[2])]);
 
 julia> d = CasADiCodegen.differentiable(f)
 the differentiable function "f"

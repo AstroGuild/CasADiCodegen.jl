@@ -16,7 +16,7 @@ same_bits(a, b) = isequal(a, b)
 function op_function(op)
     arity, build = OP_BUILDERS[op]
     x, y = SX.sym("x"), SX.sym("y")
-    CasADiCodegen.Function("f", [x, y], [arity == 1 ? build(x) : build(x, y)])
+    CasADiNative.Function("f", [x, y], [arity == 1 ? build(x) : build(x, y)])
 end
 
 const OP_CASES = Dict(op => (f = op_function(op); (f, Algorithm(f))) for op in keys(OP_BUILDERS))
@@ -98,7 +98,7 @@ function tree_function(steps, constant)
                      TREE_BINARY[mod1(kind - n, length(TREE_BINARY))](pick(i), pick(j)))
     end
     y = vertcat(nodes[end], nodes[max(end - 1, 1)])
-    CasADiCodegen.Function("t", [x], [y, jacobian(y, x)])
+    CasADiNative.Function("t", [x], [y, jacobian(y, x)])
 end
 
 const tree_step = @composed function tree_step_(kind = Data.Integers(1, length(TREE_UNARY) + length(TREE_BINARY)),
@@ -129,7 +129,7 @@ end
     x = SX.sym("x", 3)
     rosenbrock = (1 - x[1])^2 + 100 * (x[2] - x[1]^2)^2 + x[3]^2
     grad, hess = gradient(rosenbrock, x), hessian(rosenbrock, x)
-    f = CasADiCodegen.Function("rosen", [x], [rosenbrock, grad, hess], ["x"], ["f", "g", "H"])
+    f = CasADiNative.Function("rosen", [x], [rosenbrock, grad, hess], ["x"], ["f", "g", "H"])
     alg = Algorithm(f)
     @test alg.names_in == ["x"] && alg.names_out == ["f", "g", "H"]
     @test alg.nnz_out == [1, 3, 5]                 # the Hessian has 5 structural nonzeros
@@ -146,7 +146,7 @@ end
     x = SX.sym("x", n)
     terms = [(x[i] - x[i+1])^2 / (1 + C.abs(x[i])) for i in 1:n-1]
     y = vertcat(terms...)
-    f = CasADiCodegen.Function("big", [x], [y, jacobian(y, x)])
+    f = CasADiNative.Function("big", [x], [y, jacobian(y, x)])
     alg = Algorithm(f)
     @test length(alg.instructions) > 3 * chunk_size
     xv = collect(range(-2.0, 3.0; length = n))
@@ -166,12 +166,12 @@ end
 
 @testset "a written module imports only what it uses" begin
     x, y = SX.sym("x"), SX.sym("y")
-    source(expr) = sprint(io -> generate_julia(CasADiCodegen.Function("s", [x, y], [expr]), io))
+    source(expr) = sprint(io -> generate_julia(CasADiNative.Function("s", [x, y], [expr]), io))
     @test occursin("import SpecialFunctions", source(C.erf(x)))
     @test occursin("erfinv(x) =", source(C.erfinv(x)))
     @test occursin("import NaNMath", source(sin(x)))
     @test occursin("fmin(x, y) =", source(C.fmin(x, y)))
-    @test occursin("fmin(x, y) =", sprint(io -> generate_julia(CasADiCodegen.Function("s", [x, y], [C.fmin(x, y)]), io; nanmath = false)))
+    @test occursin("fmin(x, y) =", sprint(io -> generate_julia(CasADiNative.Function("s", [x, y], [C.fmin(x, y)]), io; nanmath = false)))
     plain = source(x * y + 2)
     @test count("import", plain) == 1 && occursin("import StaticArraysCore", plain) && !occursin("fmin", plain)
 end
@@ -180,21 +180,21 @@ end
     X = MX.sym("X", 2, 2)
     v = MX.sym("v", 2)
     a = SX.sym("a", 2)
-    h = CasADiCodegen.Function("h", [a], [vertcat(a[1] * a[2], a[1] - a[2])])
-    f = CasADiCodegen.Function("m", [X, v], [C.mtimes(X, v) + h(v)])
+    h = CasADiNative.Function("h", [a], [vertcat(a[1] * a[2], a[1] - a[2])])
+    f = CasADiNative.Function("m", [X, v], [C.mtimes(X, v) + h(v)])
     alg = CasADiCodegen.Codegen.algorithm(f)               # CasADi expands it to SX
     Xv, vv = [1.0, 2.0, 3.0, 4.0], [0.5, -1.5]
     @test isequal(casadi_eval(f, reshape(Xv, 2, 2), vv), emitted_eval(alg, Xv, vv))
 
     # CasADi cannot expand a linear solve, so the matrix emitter takes the function.
-    g = CasADiCodegen.Function("lin", [X, v], [C.solve(X, v)])
+    g = CasADiNative.Function("lin", [X, v], [C.solve(X, v)])
     solved = build_function(g; nonzeros = true, expression = Val{false})([zeros(2)], (Xv, vv))
     @test solved[1] ≈ reshape(Xv, 2, 2) \ vv
 end
 
 @testset "free symbols are rejected" begin
     x, p = SX.sym("x"), SX.sym("p")
-    f = CasADiCodegen.Function("free", [x], [x * p], Dict("allow_free" => true))
+    f = CasADiNative.Function("free", [x], [x * p], Dict("allow_free" => true))
     err = try generate_julia(f, IOBuffer()); nothing catch e; e end
     @test err isa ArgumentError && occursin("free", err.msg)
 end

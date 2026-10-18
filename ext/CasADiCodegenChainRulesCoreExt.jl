@@ -1,11 +1,12 @@
 module CasADiCodegenChainRulesCoreExt
 
 import CasADiCodegen
+import CasADiNative
 import ChainRulesCore
 using ChainRulesCore: AbstractZero, NoTangent, Tangent, unthunk
 using CasADiCodegen.Codegen: Differentiable, directional
 
-const C = CasADiCodegen.C
+const C = CasADiNative.C
 
 array(::AbstractZero, sp) = C.size2(sp) == 1 ? zeros(C.size1(sp)) : zeros(C.size1(sp), C.size2(sp))
 array(value, sp) = unthunk(value)

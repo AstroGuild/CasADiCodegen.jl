@@ -3,7 +3,7 @@
 # implicit function theorem gives CasADi the derivatives of the root.
 
 """
-    root_function(name, f, make_solver) -> CasADiCodegen.Function
+    root_function(name, f, make_solver) -> CasADiNative.Function
 
 Return the CasADi function `(z0, p1, p2, ...) -> z` that solves
 `f(z, p1, p2, ...) = 0` for `z` from the first guess `z0`. `f` is a CasADi
@@ -40,7 +40,7 @@ function root_function(name::AbstractString, f::C.Function, make_solver)
 end
 
 """
-    implicit_function(name, f, solve) -> CasADiCodegen.Function
+    implicit_function(name, f, solve) -> CasADiNative.Function
 
 Return the CasADi function of `root_function` for the Julia function
 `solve(z0, p1, p2, ...) -> root`, which finds the root of `f` by any means.

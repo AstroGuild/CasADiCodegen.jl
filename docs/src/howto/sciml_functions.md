@@ -6,12 +6,12 @@ the solvers ask for, so no automatic differentiation runs at solve time. Each
 generated function works in place and allocates no memory.
 
 ```@example sciml
-using CasADiCodegen
+using CasADiNative, CasADiCodegen
 using OrdinaryDiffEqVerner: Vern9
 import SciMLBase
 
 u, k, t = SX.sym("u", 2), SX.sym("k"), SX.sym("t")
-rhs = CasADiCodegen.Function("rhs", [u, k, t], [vertcat(u[2], -k * u[1])])     # also f(u) and f(u, p)
+rhs = CasADiNative.Function("rhs", [u, k, t], [vertcat(u[2], -k * u[1])])     # also f(u) and f(u, p)
 problem = SciMLBase.ODEProblem(SciMLBase.ODEFunction(rhs), [1.0, 0.0], (0.0, pi), [4.0])
 SciMLBase.solve(problem, Vern9(); abstol = 1e-12, reltol = 1e-12).u[end]
 ```
@@ -19,11 +19,11 @@ SciMLBase.solve(problem, Vern9(); abstol = 1e-12, reltol = 1e-12).u[end]
 The other constructors follow the same pattern:
 
 ```julia
-residual = CasADiCodegen.Function("r", [z, q], [equations])        # also f(z)
+residual = CasADiNative.Function("r", [z, q], [equations])        # also f(z)
 problem = SciMLBase.NonlinearProblem(SciMLBase.NonlinearFunction(residual), z0, q0)
 
-objective = CasADiCodegen.Function("J", [v, q], [cost])            # also f(v); one number
-constraints = CasADiCodegen.Function("c", [v, q], [limits])        # the same arguments; one vector
+objective = CasADiNative.Function("J", [v, q], [cost])            # also f(v); one number
+constraints = CasADiNative.Function("c", [v, q], [limits])        # the same arguments; one vector
 f = SciMLBase.OptimizationFunction(objective, constraints)  # constraints are optional
 ```
 

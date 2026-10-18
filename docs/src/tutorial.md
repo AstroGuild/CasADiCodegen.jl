@@ -5,25 +5,25 @@ that the generated code has.
 
 ## Write the model
 
-`using CasADiCodegen` gives the official CasADi front end: the SWIG interface that ships
-with CasADi 3.8.1, unchanged. Its calls are those of Python, and the
+`using CasADiNative` gives the official CasADi front end: the SWIG interface that ships
+with CasADi 3.8.1. Its calls are those of Python, and the
 [CasADi documentation](https://web.casadi.org/docs/) describes them.
 
 - The front end exports the common names: `SX`, `MX`, `DM`, `jacobian`, `gradient`,
   `hessian`, `vertcat`, `horzcat`, `substitute` and others.
-- Each other function of CasADi is in the module `CasADiCodegen.C`, for example
-  `CasADiCodegen.C.sumsqr` and `CasADiCodegen.C.nlpsol`.
-- `CasADiCodegen.Function` needs its module name, because a bare `Function` is the abstract
+- Each other function of CasADi is in the module `CasADiNative.C`, for example
+  `CasADiNative.C.sumsqr` and `CasADiNative.C.nlpsol`.
+- `CasADiNative.Function` needs its module name, because a bare `Function` is the abstract
   type of Julia.
 - Elements have the indices of Julia: `x[1]` is the first one. Methods of CasADi that
   take an index of an input or an output keep the indices of CasADi, which start at 0.
 
 ```@example start
-using CasADiCodegen
+using CasADiNative, CasADiCodegen
 
 x = SX.sym("x", 3)
 y = [sin(x[1]) * x[2]; x[3]^2 / (1 + x[1]^2)]
-f = CasADiCodegen.Function("f", [x], [y, jacobian(y, x)])
+f = CasADiNative.Function("f", [x], [y, jacobian(y, x)])
 nothing # hide
 ```
 
@@ -76,7 +76,7 @@ then writes the stored values only, and rejects a matrix with another pattern.
 ```@example start
 using SparseArrays
 
-Js = SparseMatrixCSC(CasADiCodegen.C.sparsity_out(f, 1))   # pattern of the second output: CasADi counts from 0
+Js = SparseMatrixCSC(CasADiNative.C.sparsity_out(f, 1))   # pattern of the second output: CasADi counts from 0
 g!((zeros(2), Js), ([0.3, 1.7, -0.4],))
 Js
 ```

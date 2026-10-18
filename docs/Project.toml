@@ -1,4 +1,5 @@
 [deps]
+CasADiNative = "30fb3c3e-f728-433f-984c-e53dd5973698"
 CasADiCodegen = "2e42ddf9-3b2b-405e-8fd5-d52a4b84c49f"
 ChainRulesCore = "d360d2e6-b24c-11e9-a2a3-2a2ae2dbcce4"
 Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
@@ -11,6 +12,7 @@ StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
 StaticArraysCore = "1e83bf80-4336-4d27-bf5d-d5a4f845583c"
 
 [sources]
+CasADiNative = {url = "https://github.com/casadi/CasADiNative.jl", rev = "42c5056114812abb63845ddc20780b902eb6a956"}
 CasADiCodegen = {path = ".."}
 
 [compat]

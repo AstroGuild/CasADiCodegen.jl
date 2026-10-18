@@ -1,7 +1,7 @@
 # How an integrator is differentiated
 
 This page explains what CasADi and the generated code do for the derivatives of a
-function made by [`CasADiCodegen.integrator`](@ref).
+function made by [`CasADiNative.integrator`](@ref).
 
 ## Forward sensitivities
 

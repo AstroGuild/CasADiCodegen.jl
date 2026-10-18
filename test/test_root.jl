@@ -15,13 +15,13 @@ end
 
 @testset "root of one equation with its derivatives" begin
     E, M, e = SX.sym("E"), SX.sym("M"), SX.sym("e")
-    residual = CasADiCodegen.Function("kepler", [E, M, e], [E - e * sin(E) - M])
+    residual = CasADiNative.Function("kepler", [E, M, e], [E - e * sin(E) - M])
     R = rootfinder("anomaly", SimpleNewtonRaphson(), residual; abstol = 1e-14)
     @test (C.n_in(R), C.n_out(R)) == (3, 1)
     guess, m, ec = MX.sym("guess"), MX.sym("m"), MX.sym("ec")
     root = R(guess, m, ec)
     first_order = [jacobian(root, v) for v in (guess, m, ec)]
-    f = CasADiCodegen.Function("f", [guess, m, ec], [root, first_order..., jacobian(first_order[2], m), jacobian(first_order[2], ec)])
+    f = CasADiNative.Function("f", [guess, m, ec], [root, first_order..., jacobian(first_order[2], m), jacobian(first_order[2], ec)])
     Mv, ev = 1.0, 0.3
     Ev = eccentric_anomaly(Mv, ev)
     d = 1 - ev * cos(Ev)
@@ -46,11 +46,11 @@ end
 
 @testset "root of a system, with a matrix parameter" begin
     z, A, b = SX.sym("z", 2), SX.sym("A", 2, 2), SX.sym("b", 2)
-    residual = CasADiCodegen.Function("r", [z, A, b], [mtimes(A, z) + vertcat([z[1]^3, 0]) - b])
+    residual = CasADiNative.Function("r", [z, A, b], [mtimes(A, z) + vertcat([z[1]^3, 0]) - b])
     R = rootfinder("sys", SimpleNewtonRaphson(), residual; abstol = 1e-13)
     z0, Am, bv = MX.sym("z0", 2), MX.sym("A", 2, 2), MX.sym("b", 2)
     root = R(z0, Am, bv)
-    f = CasADiCodegen.Function("f", [z0, Am, bv], [root, jacobian(root, bv), jacobian(root, Am)])
+    f = CasADiNative.Function("f", [z0, Am, bv], [root, jacobian(root, bv), jacobian(root, Am)])
     Av, bn = [2.0 0.5; 0.3 1.5], [1.0, 2.0]
     ours = build_function(f; expression = Val{false})[1]([0.0, 0.0], Av, bn)
     zv = ours[1]
@@ -70,31 +70,31 @@ end
         z
     end
     E, M, e = SX.sym("E"), SX.sym("M"), SX.sym("e")
-    R = CasADiCodegen.Codegen.root_function("hand", CasADiCodegen.Function("kepler", [E, M, e], [E - e * sin(E) - M]), newton)
+    R = CasADiCodegen.Codegen.root_function("hand", CasADiNative.Function("kepler", [E, M, e], [E - e * sin(E) - M]), newton)
     m, ec = MX.sym("m"), MX.sym("ec")
-    f = CasADiCodegen.Function("f", [m, ec], [R(m, m, ec), jacobian(R(m, m, ec), ec)])
+    f = CasADiNative.Function("f", [m, ec], [R(m, m, ec), jacobian(R(m, m, ec), ec)])
     Ev = eccentric_anomaly(1.0, 0.3)
     ours = build_function(f; nonzeros = true, expression = Val{false})([zeros(1), zeros(1)], ([1.0], [0.3]))
     @test isapprox(ours[1][1], Ev; atol = 1e-13) && isapprox(ours[2][1], sin(Ev) / (1 - 0.3 * cos(Ev)); atol = 1e-12)
     # A residual that CasADi cannot expand: the derivative keeps a linear solve.
     shift = callback(v -> [v[1] + 1], "shift", (1,), (1,); jacobian = v -> [1.0;;])
     z, q = MX.sym("z", 1), MX.sym("q", 1)
-    S = CasADiCodegen.Codegen.root_function("opaque", CasADiCodegen.Function("r", [z, q], [shift(z) * 2 - q]), newton)
-    g = CasADiCodegen.Function("g", [q], [S(q, q), jacobian(S(q, q), q)])
+    S = CasADiCodegen.Codegen.root_function("opaque", CasADiNative.Function("r", [z, q], [shift(z) * 2 - q]), newton)
+    g = CasADiNative.Function("g", [q], [S(q, q), jacobian(S(q, q), q)])
     @test build_function(g; nonzeros = true, expression = Val{false})([zeros(1), zeros(1)], ([5.0],)) == [[1.5], [0.5]]
 end
 
 @testset "limits of the rootfinder" begin
     z, p = SX.sym("z", 2), SX.sym("p")
-    @test_throws ArgumentError rootfinder("not a name", SimpleNewtonRaphson(), CasADiCodegen.Function("r", [z, p], [z * p]))
-    @test_throws ArgumentError rootfinder("r", SimpleNewtonRaphson(), CasADiCodegen.Function("r", [z, p], [z[1] * p]))          # one equation, two unknowns
-    @test_throws ArgumentError rootfinder("r", SimpleNewtonRaphson(), CasADiCodegen.Function("r", [z, p], [z * p, z]))         # two results
+    @test_throws ArgumentError rootfinder("not a name", SimpleNewtonRaphson(), CasADiNative.Function("r", [z, p], [z * p]))
+    @test_throws ArgumentError rootfinder("r", SimpleNewtonRaphson(), CasADiNative.Function("r", [z, p], [z[1] * p]))          # one equation, two unknowns
+    @test_throws ArgumentError rootfinder("r", SimpleNewtonRaphson(), CasADiNative.Function("r", [z, p], [z * p, z]))         # two results
     Z = SX.sym("Z", 2, 2)
-    @test_throws ArgumentError rootfinder("r", SimpleNewtonRaphson(), CasADiCodegen.Function("r", [Z], [Z]))                   # a matrix of unknowns
+    @test_throws ArgumentError rootfinder("r", SimpleNewtonRaphson(), CasADiNative.Function("r", [Z], [Z]))                   # a matrix of unknowns
     # An equation with no root: the error names the rootfinder and the return code of the solver.
-    none = rootfinder("none", SimpleNewtonRaphson(), CasADiCodegen.Function("r", [p], [p^2 + 1]); maxiters = 20)
+    none = rootfinder("none", SimpleNewtonRaphson(), CasADiNative.Function("r", [p], [p^2 + 1]); maxiters = 20)
     w = MX.sym("w")
-    g = build_function(CasADiCodegen.Function("f", [w], [none(w)]); nonzeros = true, expression = Val{false})
+    g = build_function(CasADiNative.Function("f", [w], [none(w)]); nonzeros = true, expression = Val{false})
     err = try g([zeros(1)], ([0.5],)); nothing catch e; e end
     @test err isa ErrorException && occursin("rootfinder \"none\"", err.msg)
 end

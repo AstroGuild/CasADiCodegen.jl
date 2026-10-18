@@ -66,12 +66,17 @@ Dict of options to a `GenericType` of CasADi and tries the type `bool` first, wh
 accepts any `Int64` and any `Float64` that is a whole number. A vector of such numbers
 becomes a vector of `bool`, which CasADi refuses with the error "type mismatch", as for
 the options `constraints` and `u_scale` of `kinsol`; a vector thus gave an error and no
-wrong result. CasADiCodegen.jl now converts the Dict before the call in each function of the
-generated module `CasADiCodegen.C` that takes options, so that an integer reaches CasADi as an
+wrong result. CasADiNative.jl passes the Dict to this code as it is. When
+CasADiCodegen.jl is loaded, it adds to each function of the generated module
+`CasADiNative.C` that takes options a method for an `AbstractDict`, which converts the
+Dict and then calls the method of the front end; an integer thus reaches CasADi as an
 integer and any other real number as a double, also in a vector and in a nested Dict.
+These methods change the behaviour of CasADiNative.jl in the whole Julia session, as
+do the method of `callback` that takes a Julia function and the methods of
+`integrator` and `rootfinder` that take an algorithm of SciML.
 
 Two cases keep the defect: a value in a `Vector{Any}` or in another container that is
-not a Dict, and the module of CasADiSWIG_jll used directly, without CasADiCodegen.jl. In the
+not a Dict, and CasADiNative.jl used without CasADiCodegen.jl loaded. In the
 first case, give a vector with a concrete element type, such as `[1, 2]` or
 `Float64[1, 2]`, and give nested options as a Dict. The function
 `change_option(f, name, value)` is not affected: it takes a `GenericType` only, and the
@@ -102,5 +107,5 @@ Five other behaviours differ from what a user of CasADi or of Julia can expect.
   of a read such as `get_nz(v, false, Slice(1, 5, 2), i)`. The generated code gives
   the correct sum, so it differs from the CasADi virtual machine there.
 - `inv(A)` is the matrix inverse for SX and for MX, as in Julia, and `inv(A, "qr")`
-  names the linear solver of an MX graph. The function `CasADiCodegen.C.inv(A)` of the
+  names the linear solver of an MX graph. The function `CasADiNative.C.inv(A)` of the
   front end of CasADi 3.8.1 is the reciprocal of each element for an MX matrix.

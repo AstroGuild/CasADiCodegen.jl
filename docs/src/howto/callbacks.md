@@ -1,18 +1,18 @@
 # Call a Julia function from the model
 
-[`CasADiCodegen.callback`](@ref) makes a plain Julia function a CasADi function that a matrix (MX)
+[`CasADiNative.callback`](@ref) makes a plain Julia function a CasADi function that a matrix (MX)
 graph can call. Use it when a model reads an ephemeris, a table or any other code
 that CasADi cannot see. The generated code calls the Julia function directly.
 
 ```@example cb
-using CasADiCodegen
+using CasADiNative, CasADiCodegen
 
 drag(v) = -0.5 * sqrt(v[1]^2 + v[2]^2) .* v                  # any Julia code
 drag_jacobian(v) = (n = sqrt(v[1]^2 + v[2]^2); -0.5 * (n * [1 0; 0 1] + v * v' / n))
 force = callback(drag, "drag", (2,), (2,); jacobian = drag_jacobian)
 
 v = MX.sym("v", 2)
-f = CasADiCodegen.Function("f", [v], [force(2v), jacobian(force(2v), v)])
+f = CasADiNative.Function("f", [v], [force(2v), jacobian(force(2v), v)])
 g, g! = build_function(f; expression = Val{false})
 g([3.0, 4.0])[2]
 ```
@@ -41,7 +41,7 @@ its time derivatives from an ephemeris table of Allspice.jl. `table_jet(tab, t, 
 of that package returns the position and its first `k` time derivatives:
 
 ```julia
-using CasADiCodegen, Allspice, LinearAlgebra
+using CasADiNative, CasADiCodegen, Allspice, LinearAlgebra
 
 tab = ephemeris_table("MOON", t0, t1, "J2000", "NONE", "EARTH")
 order(k) = let v = Val(k); t -> table_jet(tab, t[1], v)[k+1]; end       # derivative k of the position
@@ -51,7 +51,7 @@ x, t = MX.sym("x", 6), MX.sym("t")
 r, s = x[1:3], moon(t)
 a = -GM_EARTH * r / norm(r)^3 + GM_MOON * ((s - r) / norm(s - r)^3 - s / norm(s)^3)
 z = vertcat(x, t)
-f = CasADiCodegen.Function("f", [x, t], [vertcat(x[4:6], a), jacobian(vertcat(x[4:6], a), z)])
+f = CasADiNative.Function("f", [x, t], [vertcat(x[4:6], a), jacobian(vertcat(x[4:6], a), z)])
 g, g! = build_function(f; expression = Val{false})
 ```
 

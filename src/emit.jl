@@ -411,11 +411,11 @@ Both functions take arrays in matrix shape; a column is a vector.
 
 # Examples
 ```jldoctest
-julia> using CasADiCodegen
+julia> using CasADiNative, CasADiCodegen
 
 julia> x = SX.sym("x", 2);
 
-julia> f = CasADiCodegen.Function("f", [x], [x[1] * x[2], jacobian(x[1] * x[2], x)]);
+julia> f = CasADiNative.Function("f", [x], [x[1] * x[2], jacobian(x[1] * x[2], x)]);
 
 julia> g, g! = build_function(f; expression = Val{false});
 

@@ -7,7 +7,7 @@
 
 """
     Solver(alg; options...)
-    Solver(target::CasADiCodegen.Function, alg; options...)
+    Solver(target::CasADiNative.Function, alg; options...)
 
 A SciML algorithm `alg`, for example `Vern9()`, with the `options` that go to its solver,
 for example `abstol`. Use it as a field of [`Solvers`](@ref) when the algorithm has options.
@@ -53,7 +53,7 @@ solver, unless the solver has them. A solver of the first four fields must have 
 
 # Examples
 ```julia
-using CasADiCodegen
+using CasADiNative, CasADiCodegen
 using OrdinaryDiffEqVerner: Vern9
 
 solvers = CasADiCodegen.Solvers(ode = CasADiCodegen.Solver(Vern9(); abstol = 1e-13, reltol = 1e-13))
@@ -128,7 +128,7 @@ function refuse(callee::C.Function)
     name, class = C.name(callee), C.class_name(callee)
     needs(kind, field) = "is $kind of CasADi, which generated code replaces by a solver of the SciML ecosystem; give one with the option solvers = CasADiCodegen.Solvers($field = ...)"
     reason = if class == "CallbackInternal"
-        "is a callback of a subtype of CasadiCallback, whose Julia function this package does not know; make it with CasADiCodegen.callback(f, name, sizes_in, sizes_out)"
+        "is a callback of a subtype of CasadiCallback, whose Julia function this package does not know; make it with CasADiNative.callback(f, name, sizes_in, sizes_out)"
     elseif class in FIXED_STEP_CLASSES && C.nnz_out(C.get_function(callee, "dae"), 3) > 0
         "is an integrator of CasADi with a fixed step and an event function, which generated code replaces by a solver of the SciML ecosystem; give one with the option solvers = CasADiCodegen.Solvers(overrides = [CasADiCodegen.Solver(I, alg)]), where I is the integrator"
     elseif class in VARIABLE_STEP_CLASSES
@@ -158,7 +158,7 @@ end
 column_of(value) = C.vec(C.densify(value))
 
 """
-    integrator_model(I::CasADiCodegen.Function) -> NamedTuple
+    integrator_model(I::CasADiNative.Function) -> NamedTuple
 
 Return the problem of the integrator `I` of CasADi:
 
@@ -186,7 +186,7 @@ function integrator_model(I::C.Function)
 end
 
 """
-    sensitivity_function(dae) -> CasADiCodegen.Function
+    sensitivity_function(dae) -> CasADiNative.Function
 
 Return the forward derivative of the equations `dae` of an integrator in one direction:
 `(t, x, z, p, u, dx, dz, dp, du) -> (d ode, d alg, d quad)`.
@@ -200,7 +200,7 @@ function sensitivity_function(dae::C.Function)
 end
 
 """
-    right_side(model) -> CasADiCodegen.Function
+    right_side(model) -> CasADiNative.Function
 
 Return the function `(u, p, t) -> du` of the equations of an integrator of CasADi (see
 `integrator_model`). `u` has the differential states, the algebraic states and the
@@ -316,7 +316,7 @@ function event_functions(model, transition)
 end
 
 """
-    rootfinder_model(R::CasADiCodegen.Function) -> NamedTuple
+    rootfinder_model(R::CasADiNative.Function) -> NamedTuple
 
 Return the problem of the rootfinder `R` of CasADi: the function `oracle`, whose result
 `iout` (from zero) is the residual and whose argument `iin` is the unknown of `n` numbers.
@@ -332,7 +332,7 @@ end
 other_sizes(model) = [C.nnz_in(model.oracle, i) for i in 0:C.n_in(model.oracle)-1 if i != model.iin]
 
 """
-    residual_function(model) -> CasADiCodegen.Function
+    residual_function(model) -> CasADiNative.Function
 
 Return the function `(u, p) -> residual` of a rootfinder of CasADi (see
 `rootfinder_model`). `u` is the unknown, and `p` has the nonzeros of the other arguments,
@@ -354,7 +354,7 @@ function residual_function(model)
 end
 
 """
-    optimization_model(S::CasADiCodegen.Function) -> NamedTuple
+    optimization_model(S::CasADiNative.Function) -> NamedTuple
 
 Return the problem of the solver `S` that `nlpsol` of CasADi made: the `objective(x, p)`,
 the `constraints(x, p)`, and the numbers of unknowns `nx`, of parameters `np` and of
@@ -378,14 +378,14 @@ same_interface(f::C.Function, inputs, results) =
     C.Function(C.name(f), inputs, results, [C.name_in(f, i) for i in 0:C.n_in(f)-1], [C.name_out(f, o) for o in 0:C.n_out(f)-1])
 
 """
-    solver_integrator(callee) -> CasADiCodegen.Function or nothing
+    solver_integrator(callee) -> CasADiNative.Function or nothing
 
 Return a function with the inputs and the results of the integrator `callee` of CasADi
 that integrates with the solver that the user selected for it (see `Solvers`), or `nothing`
 when no solver is selected. An integrator with an event function is one call of a Julia
 function (see `solver_events`).
 
-The function is one call per output time of one `CasADiCodegen.integrator` with free times, for
+The function is one call per output time of one `CasADiNative.integrator` with free times, for
 the equations of `right_side`; a model with algebraic states has a mass matrix.
 
 An integrator that CasADi made for adjoint sensitivities gets them as the reverse
@@ -456,7 +456,7 @@ function emitted_right_side(model)
 end
 
 """
-    solver_events(callee, model, solver) -> CasADiCodegen.Function
+    solver_events(callee, model, solver) -> CasADiNative.Function
 
 Return the replacement of `solver_integrator` for an integrator `callee` of CasADi with an
 event function: one call of the Julia function of `event_integrator`, which integrates to
@@ -482,11 +482,11 @@ function solver_events(callee::C.Function, model, solver)
 end
 
 """
-    solver_rootfinder(callee) -> CasADiCodegen.Function or nothing
+    solver_rootfinder(callee) -> CasADiNative.Function or nothing
 
 Return a function with the inputs and the results of the rootfinder `callee` of CasADi
 that finds the root with the solver that the user selected for it (see `Solvers`), through
-`CasADiCodegen.rootfinder`, or `nothing` when no solver is selected. As in CasADi, the other
+`CasADiNative.rootfinder`, or `nothing` when no solver is selected. As in CasADi, the other
 results are those of the function of the residual at the root.
 """
 function solver_rootfinder(callee::C.Function)
@@ -541,7 +541,7 @@ function optimization_functions(model)
 end
 
 """
-    conic_model(S::CasADiCodegen.Function) -> NamedTuple
+    conic_model(S::CasADiNative.Function) -> NamedTuple
 
 Return the problem of the solver `S` that `conic` of CasADi made, in the form of
 `optimization_model`: the objective `x' H x / 2 + g' x` and the constraints `A x` as
@@ -562,7 +562,7 @@ function conic_model(S::C.Function)
 end
 
 """
-    solver_conic(callee) -> CasADiCodegen.Function or nothing
+    solver_conic(callee) -> CasADiNative.Function or nothing
 
 Return a function with the inputs and the results of the solver `callee` that `conic` of
 CasADi made, which solves the problem with the solver that the user selected for it (see
@@ -572,7 +572,7 @@ are not used. CasADi has no derivatives of such a solver, so the replacement nee
 solver_conic
 
 """
-    solver_optimization(callee) -> CasADiCodegen.Function or nothing
+    solver_optimization(callee) -> CasADiNative.Function or nothing
 
 Return a function with the inputs and the results of the solver `callee` that `nlpsol` of
 CasADi made, which solves the problem with the solver that the user selected for it (see

@@ -1,11 +1,8 @@
 """
     Codegen
 
-Everything that this package adds to the CasADi front end.
-
-It is a separate module because the front end shadows 44 names of `Base`
-inside `CasADiCodegen` (`all`, `sum`, `sin`, `zeros`, ...). Inside `Codegen` those
-names keep their ordinary meaning.
+The code generation of the package, which reads functions of the front end
+CasADiNative.jl (`Front` here) and emits Julia code.
 """
 module Codegen
 
@@ -18,7 +15,10 @@ import StaticArraysCore
 
 RuntimeGeneratedFunctions.init(@__MODULE__)
 
-const Front = parentmodule(@__MODULE__)
+import CasADiNative
+
+const Package = parentmodule(@__MODULE__)
+const Front = CasADiNative
 const C = Front.C
 const SX = C.SX
 const MX = C.MX

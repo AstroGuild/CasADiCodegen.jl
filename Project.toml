@@ -4,8 +4,8 @@ version = "0.27.0"
 authors = ["Alex Pascarella <alex.pascarella@ellissoide.com>"]
 
 [deps]
+CasADiNative = "30fb3c3e-f728-433f-984c-e53dd5973698"
 CasADiSWIG_jll = "0478ce59-e586-55af-83e7-894d8531a7d3"
-CasADi_jll = "4e54d0b0-c9f2-5505-b569-bd333cacc8c1"
 Libdl = "8f399da3-3557-5675-b5ff-fb832c97cbdb"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 NaNMath = "77ba4419-2d1f-58cd-9bb1-8ffee604a2e3"
@@ -14,6 +14,9 @@ RuntimeGeneratedFunctions = "7e49a35a-f44a-4d26-94aa-eba1b4ca6b47"
 SpecialFunctions = "276daf66-3868-5448-9aa4-cd146d93841b"
 StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
 StaticArraysCore = "1e83bf80-4336-4d27-bf5d-d5a4f845583c"
+
+[sources]
+CasADiNative = {url = "https://github.com/casadi/CasADiNative.jl", rev = "42c5056114812abb63845ddc20780b902eb6a956"}
 
 [weakdeps]
 ADTypes = "47edcb42-4c32-4615-8424-f2b9edc5f35b"
@@ -29,9 +32,9 @@ CasADiCodegenSciMLBaseExt = "SciMLBase"
 CasADiCodegenSparseArraysExt = "SparseArrays"
 
 [compat]
+CasADiNative = "3.8.1"
 ADTypes = "1"
 CasADiSWIG_jll = "=3.8.1"
-CasADi_jll = "=3.8.1"
 ChainRulesCore = "1"
 DifferentiationInterface = "0.6, 0.7"
 Libdl = "1"

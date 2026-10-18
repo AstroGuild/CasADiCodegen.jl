@@ -126,7 +126,7 @@ function julia_function(f, name::String, nargs::Int, shapes_in, shapes_out, jaco
 end
 
 """
-    callback(f, name, sizes_in, sizes_out; jacobian = nothing, options...) -> CasADiCodegen.Function
+    callback(f, name, sizes_in, sizes_out; jacobian = nothing, options...) -> CasADiNative.Function
 
 Make the Julia function `f` a CasADi function that a matrix (MX) graph can call. Code from
 [`build_function`](@ref) and [`generate_julia`](@ref) calls `f` and its Jacobian directly,
@@ -159,7 +159,7 @@ See [Call a Julia function from the model](@ref).
 
 # Examples
 ```jldoctest
-julia> using CasADiCodegen
+julia> using CasADiNative, CasADiCodegen
 
 julia> square(v) = v .^ 2;
 
@@ -167,7 +167,7 @@ julia> c = callback(square, "square", (2,), (2,); jacobian = v -> [2v[1] 0; 0 2v
 
 julia> v = MX.sym("v", 2);
 
-julia> f = CasADiCodegen.Function("f", [v], [c(v), jacobian(c(v), v)]);
+julia> f = CasADiNative.Function("f", [v], [c(v), jacobian(c(v), v)]);
 
 julia> g, g! = build_function(f; expression = Val{false});
 

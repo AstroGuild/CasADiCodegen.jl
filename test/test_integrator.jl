@@ -48,7 +48,7 @@ end
     x, p, t = SX.sym("x", 1), SX.sym("p", 1), SX.sym("t")
     F = integrator("T", Vern9(), Dict("x" => x, "p" => p, "t" => t, "ode" => t * p), 1.0, 3.0; TIGHT...)
     x0, q = MX.sym("x0", 1), MX.sym("q", 1)
-    f = CasADiCodegen.Function("f", [x0, q], [F(x0, q), jacobian(F(x0, q), x0), jacobian(F(x0, q), q)])
+    f = CasADiNative.Function("f", [x0, q], [F(x0, q), jacobian(F(x0, q), x0), jacobian(F(x0, q), q)])
     @test closeto(ode_emitted(f, ([0.5], [2.0])), [[8.5], [1.0], [4.0]], 1e-12)
     @test closeto(casadi_eval(f, [0.5], [2.0]), [[8.5], [1.0], [4.0]], 1e-12)
 
@@ -56,26 +56,26 @@ end
     D = integrator("D", Vern9(), Dict("x" => y, "ode" => vertcat([-y[1], 2 * y[2]])), 0.0, 1.0; TIGHT...)
     @test C.n_in(D) == 1
     y0 = MX.sym("y0", 2)
-    d = CasADiCodegen.Function("d", [y0], [D(y0), jacobian(D(y0), y0), jacobian(jacobian(D(y0), y0), y0)])
+    d = CasADiNative.Function("d", [y0], [D(y0), jacobian(D(y0), y0), jacobian(jacobian(D(y0), y0), y0)])
     expected = [[exp(-1) * 3, exp(2) * 0.5], [exp(-1), 0.0, 0.0, exp(2)], zeros(8)]
     @test closeto(ode_emitted(d, ([3.0, 0.5],)), expected, 1e-11)
     @test closeto(casadi_eval(d, [3.0, 0.5]), expected, 1e-11)
 
     B = integrator("B", Vern9(), Dict("x" => y, "ode" => vertcat([-y[1], 2 * y[2]])), 1.0, 0.0; TIGHT...)
-    b = CasADiCodegen.Function("b", [y0], [B(D(y0))])
+    b = CasADiNative.Function("b", [y0], [B(D(y0))])
     @test closeto(ode_emitted(b, ([3.0, 0.5],)), [[3.0, 0.5]], 1e-11)
 end
 
 @testset "matrix right side that calls a function" begin
     a = SX.sym("a", 2)
-    force = CasADiCodegen.Function("force", [a], [vertcat([a[2], -sin(a[1])])])
+    force = CasADiNative.Function("force", [a], [vertcat([a[2], -sin(a[1])])])
     x = MX.sym("x", 2)
     F = integrator("P", Vern9(), Dict("x" => x, "ode" => force(x)), 0.0, 2.0; TIGHT...)
     R = integrator("PR", "cvodes", Dict("x" => a, "ode" => force(a)), 0.0, 2.0, Dict("abstol" => 1e-12, "reltol" => 1e-12))
     x0 = MX.sym("x0", 2)
-    f = CasADiCodegen.Function("f", [x0], [F(x0), jacobian(F(x0), x0)])
+    f = CasADiNative.Function("f", [x0], [F(x0), jacobian(F(x0), x0)])
     xr = R(Dict("x0" => x0))["xf"]
-    r = CasADiCodegen.Function("r", [x0], [xr, jacobian(xr, x0)])
+    r = CasADiNative.Function("r", [x0], [xr, jacobian(xr, x0)])
     @test closeto(ode_emitted(f, ([0.4, 0.3],)), casadi_eval(r, [0.4, 0.3]), 1e-9)
 end
 
@@ -83,10 +83,10 @@ end
     F = two_body_integrator()
     x0, p = MX.sym("x0", 4), MX.sym("p", 1)
     xf = F(F(x0, p) * 1.0, p)
-    f = CasADiCodegen.Function("chain", [x0, p], [xf, jacobian(xf, x0)])
+    f = CasADiNative.Function("chain", [x0, p], [xf, jacobian(xf, x0)])
     R = cvodes_call(two_body_cvodes())
     xr = R(R(x0, p), p)
-    reference = casadi_eval(CasADiCodegen.Function("r", [x0, p], [xr, jacobian(xr, x0)]), ODE_X0, ODE_MU)
+    reference = casadi_eval(CasADiNative.Function("r", [x0, p], [xr, jacobian(xr, x0)]), ODE_X0, ODE_MU)
     ours = ode_emitted(f, (ODE_X0, ODE_MU))
     @test closeto(ours, reference, 1e-7)
     # Matrix code runs the calls in another order, so that the state can come from another integration.
@@ -140,7 +140,7 @@ end
     arcs = 3
     X, p = MX.sym("X", 4, arcs), MX.sym("p", 1)
     ends = C.map(F, arcs)(X, C.repmat(p, 1, arcs))
-    f = CasADiCodegen.Function("shoot", [X, p], [ends, jacobian(ends, X)])
+    f = CasADiNative.Function("shoot", [X, p], [ends, jacobian(ends, X)])
     g = build_function(f; nonzeros = true, expression = Val{false})
     starts = vec([ODE_X0[i] * (1 + 0.01k) for i in 1:4, k in 1:arcs])
     # Integrators with equal content share the state of the solver, so the calls are counted.
@@ -159,7 +159,7 @@ end
     @test [C.name_in(F, i) for i in 0:3] == ["x0", "p", "t0", "tf"]
     x0, p, t0, tf = MX.sym("x0", 4), MX.sym("p", 1), MX.sym("t0"), MX.sym("tf")
     xf = F(x0, p, t0, tf)
-    f = CasADiCodegen.Function("f", [x0, p, t0, tf], [xf, jacobian(xf, x0), jacobian(xf, p), jacobian(xf, t0), jacobian(xf, tf)])
+    f = CasADiNative.Function("f", [x0, p, t0, tf], [xf, jacobian(xf, x0), jacobian(xf, p), jacobian(xf, t0), jacobian(xf, tf)])
     g = build_function(f; nonzeros = true, expression = Val{false})
     run(a, b) = g([zeros(4), zeros(16), zeros(4), zeros(4), zeros(4)], (ODE_X0, ODE_MU, [a], [b]))
     # The times of the integrator with fixed times, and the same arc later: the model has no time in it.
@@ -187,7 +187,7 @@ end
     yf = T(y0, t0, tf)
     first_order = [jacobian(yf, v) for v in (y0, t0, tf)]
     second_order = [jacobian(first_order[2], t0), jacobian(first_order[3], tf), jacobian(first_order[3], t0), jacobian(first_order[3], y0)]
-    d = CasADiCodegen.Function("d", [y0, t0, tf], [yf, first_order..., second_order...])
+    d = CasADiNative.Function("d", [y0, t0, tf], [yf, first_order..., second_order...])
     a, b, c = 0.7, 0.5, 1.5
     e = exp((c^2 - b^2) / 2)
     expected = [[a * e], [e], [-b * a * e], [c * a * e], [(b^2 - 1) * a * e], [(c^2 + 1) * a * e], [-b * c * a * e], [c * e]]
@@ -196,7 +196,7 @@ end
 
     # A first run with equal times, then a run with an arc.
     Z = integrator("Z", Vern9(), Dict("x" => y, "t" => t, "ode" => 2 * t * y); TIGHT...)
-    z = build_function(CasADiCodegen.Function("z", [y0, t0, tf], [Z(y0, t0, tf)]); nonzeros = true, expression = Val{false})
+    z = build_function(CasADiNative.Function("z", [y0, t0, tf], [Z(y0, t0, tf)]); nonzeros = true, expression = Val{false})
     @test z([zeros(1)], ([a], [b], [b])) == [[a]]
     @test closeto(z([zeros(1)], ([a], [b], [c])), [[a * e^2]], 1e-11)
 
@@ -204,7 +204,7 @@ end
     arcs = 3
     X, T0, T1 = MX.sym("X", 4, arcs), MX.sym("T0", 1, arcs), MX.sym("T1", 1, arcs)
     ends = C.map(F, arcs)(X, C.repmat(p, 1, arcs), T0, T1)
-    shoot = CasADiCodegen.Function("shoot", [X, p, T0, T1], [ends, jacobian(ends, T1)])
+    shoot = CasADiNative.Function("shoot", [X, p, T0, T1], [ends, jacobian(ends, T1)])
     starts = repeat(ODE_X0, arcs)
     res = ode_emitted(shoot, (starts, ODE_MU, [0.0, 0.0, 1.5], [3.0, 1.0, 4.5]))
     @test closeto([res[1][1:4], res[1][9:12]], [ours[1], ours[1]], 1e-10)
@@ -218,7 +218,7 @@ end
     @test (C.size1(C.sparsity_out(F, 0)), C.size2(C.sparsity_out(F, 0))) == (4, 4)
     x0, p = MX.sym("x0", 4), MX.sym("p", 1)
     X = F(x0, p)
-    f = CasADiCodegen.Function("f", [x0, p], [X, jacobian(X[:, 2], x0), jacobian(X[:, 2], p)])
+    f = CasADiNative.Function("f", [x0, p], [X, jacobian(X[:, 2], x0), jacobian(X[:, 2], p)])
     ours = ode_emitted(f, (ODE_X0, ODE_MU))
     reference = ode_emitted(with_derivatives(two_body_integrator(), 1), (ODE_X0, ODE_MU))      # at the time 3
     @test closeto([ours[1][5:8], ours[2], ours[3]], reference, 1e-9)
@@ -249,7 +249,7 @@ end
     @test [C.name_out(F, j) for j in 0:1] == ["xf", "qf"]
     x0, q = MX.sym("x0", 1), MX.sym("q", 1)
     both = F(x0, q)
-    f = CasADiCodegen.Function("f", [x0, q], [both[1], both[2], jacobian(both[2], x0), jacobian(both[2], q)])
+    f = CasADiNative.Function("f", [x0, q], [both[1], both[2], jacobian(both[2], x0), jacobian(both[2], q)])
     slope = (2 * a * decay(2.0) * k - a * (1 - decay(2.0))) / k^2          # d area / d k
     expected = [[a * decay(2.0)], [area(2.0), 4.0], [(1 - decay(2.0)) / k, 0.0], [slope, 0.0]]
     @test closeto(ode_emitted(f, ([a], [k])), expected, 1e-10)
@@ -258,7 +258,7 @@ end
     G = integrator("QG", Vern9(), dae; TIGHT...)
     t0, tf = MX.sym("t0"), MX.sym("tf")
     free = G(x0, q, t0, tf)
-    g = CasADiCodegen.Function("g", [x0, q, t0, tf], [free[1], free[2], jacobian(free[2], tf), jacobian(free[2], t0)])
+    g = CasADiNative.Function("g", [x0, q, t0, tf], [free[1], free[2], jacobian(free[2], tf), jacobian(free[2], t0)])
     xT = a * decay(1.5)
     @test closeto(ode_emitted(g, ([a], [k], [0.5], [2.0])), [[xT], [area(1.5), 3.75], [xT, 4.0], [-xT, -1.0]], 1e-9)
     K = integrator("QK", Vern9(), dae, 0.0, [1.0, 2.0]; TIGHT...)
@@ -280,7 +280,7 @@ end
     x0, q, t0, tf = MX.sym("x0", 2), MX.sym("q", 1), MX.sym("t0"), MX.sym("tf")
     out = F(x0, q, t0, tf)
     all_in = vertcat([x0, q, t0])
-    f = CasADiCodegen.Function("f", [x0, q, t0, tf],
+    f = CasADiNative.Function("f", [x0, q, t0, tf],
         [out[1], out[2], out[3], jacobian(out[3], all_in), jacobian(out[1], all_in), hessian(out[3], x0), jacobian(out[3], tf)])
     at = [10.0, 3.0, 9.81, 0.5]
     te = landing(at)
@@ -305,7 +305,7 @@ end
     half(v) = π * (1 / (2 / v[1] - v[4]^2))^1.5                                 # v = (x, y, vx, vy) at an apsis on the x axis
     s0 = MX.sym("s0", 4)
     reached = A(s0, MX(0.0), MX(100.0))
-    h = CasADiCodegen.Function("h", [s0], [reached[1], reached[2], jacobian(reached[2], s0)[:, 1], jacobian(reached[2], s0)[:, 4]])
+    h = CasADiNative.Function("h", [s0], [reached[1], reached[2], jacobian(reached[2], s0)[:, 1], jacobian(reached[2], s0)[:, 4]])
     start = [1.0, 0.0, 0.0, 1.1]
     slopes = ForwardDiff.gradient(half, start)
     a = 1 / (2 - 1.1^2)
@@ -318,8 +318,8 @@ end
                             if key isa Tuple && key[1] isa Solver && key[1].name == name && length(state.u) == 20; init = 0)
     plain = integrator("plain", Vern9(), delete!(copy(orbit), "zero"); TIGHT...)
     to = MX.sym("to")
-    reference = CasADiCodegen.Function("reference", [s0, to], [plain(s0, MX(0.0), to), jacobian(plain(s0, MX(0.0), to), s0)])
-    both = CasADiCodegen.Function("both", [s0], [reached[1], jacobian(reached[1], s0), jacobian(reached[2], s0)])
+    reference = CasADiNative.Function("reference", [s0, to], [plain(s0, MX(0.0), to), jacobian(plain(s0, MX(0.0), to), s0)])
+    both = CasADiNative.Function("both", [s0], [reached[1], jacobian(reached[1], s0), jacobian(reached[2], s0)])
     count(f, arguments) = begin
         g = build_function(f; nonzeros = true, expression = Val{false})
         result = [zeros(C.nnz_out(f, j - 1)) for j in 1:C.n_out(f)]
@@ -335,7 +335,7 @@ end
     swing = Dict("x" => w, "p" => c, "t" => t, "ode" => vertcat([w[2], -w[1]]), "zero" => w[1] - c[1])
     time_of(; options...) = begin
         E = integrator("swing", Vern9(), swing; TIGHT..., options...)
-        only(only(ode_emitted(CasADiCodegen.Function("e", [x0, q], [E(x0, q, MX(0.0), MX(6.0))[2]]), ([0.0, 1.0], [0.5]))))
+        only(only(ode_emitted(CasADiNative.Function("e", [x0, q], [E(x0, q, MX(0.0), MX(6.0))[2]]), ([0.0, 1.0], [0.5]))))
     end
     @test isapprox(time_of(; direction = 1), π / 6; atol = 1e-10)
     # With no point between the ends of a step, the solver looks for a change of sign at the ends only.
@@ -343,7 +343,7 @@ end
     clock = Dict("x" => w, "p" => c, "t" => t, "ode" => vertcat([w[2], -w[1]]), "zero" => t - c[1])
     K = integrator("clock", Vern9(), clock; TIGHT...)
     tk = K(x0, q, t0, tf)[2]
-    k = CasADiCodegen.Function("k", [x0, q, t0, tf], [tk, jacobian(tk, q), jacobian(tk, t0)])
+    k = CasADiNative.Function("k", [x0, q, t0, tf], [tk, jacobian(tk, q), jacobian(tk, t0)])
     @test closeto(ode_emitted(k, ([0.0, 1.0], [2.5], [1.0], [4.0])), [[2.5], [1.0], [0.0]], 1e-9)
     # Backward in time.
     @test closeto(ode_emitted(k, ([0.0, 1.0], [2.5], [4.0], [1.0])), [[2.5], [1.0], [0.0]], 1e-9)
@@ -351,7 +351,7 @@ end
     # Dual numbers through the generated code, with the full specialization of the solver:
     # the derivative of the event time by the initial state and the parameter.
     D = integrator("drop", Vern9(), fall; TIGHT..., specialize = SciMLBase.FullSpecialize)
-    drop = build_function(CasADiCodegen.Function("d", [x0, q], [D(x0, q, MX(0.5), MX(20.0))[3]]); nonzeros = true, expression = Val{false})
+    drop = build_function(CasADiNative.Function("d", [x0, q], [D(x0, q, MX(0.5), MX(20.0))[3]]); nonzeros = true, expression = Val{false})
     event(v) = (res = [zeros(eltype(v), 1)]; drop(res, (v[1:2], v[3:3])); res[1][1])
     @test isapprox(ForwardDiff.gradient(event, at[1:3]), ForwardDiff.gradient(v -> landing([v; 0.5]), at[1:3]); atol = 1e-8)
 
@@ -379,7 +379,7 @@ end
     h0, q, tf = MX.sym("h0"), MX.sym("q", 2), MX.sym("tf")
     out = F(vertcat([h0, MX(0.0)]), q, MX(0.0), tf)
     every = vertcat([h0, q])
-    f = CasADiCodegen.Function("bounces", [h0, q, tf], [out[1], out[2], out[3], jacobian(out[1], every), jacobian(out[3], every), jacobian(out[1], tf)])
+    f = CasADiNative.Function("bounces", [h0, q, tf], [out[1], out[2], out[3], jacobian(out[1], every), jacobian(out[3], every), jacobian(out[1], tf)])
     at, T = [5.0, 9.81, 0.8], 3.0
     expected = [final(at, T), [T], times(at), vec(ForwardDiff.jacobian(v -> final(v, T), at)), vec(ForwardDiff.jacobian(times, at)),
                 ForwardDiff.derivative(s -> final(at, s), T)]
@@ -388,7 +388,7 @@ end
     # The integration ends at the last event without a jump there: the state on the ground, before the second bounce.
     G = integrator("ball_end", Vern9(), ball; events = 2, direction = -1, TIGHT...)
     ended = G(vertcat([h0, MX(0.0)]), q, MX(0.0), tf)
-    g = CasADiCodegen.Function("second", [h0, q, tf], [ended[1], ended[2], ended[3]])
+    g = CasADiNative.Function("second", [h0, q, tf], [ended[1], ended[2], ended[3]])
     t1 = sqrt(2 * 5.0 / 9.81)
     @test closeto(ode_emitted(g, ([5.0], [9.81, 0.8], [T])), [[0.0, -0.8 * 9.81 * t1], [times(at)[2]], times(at)], 1e-9)
     # No "transition": the third time that an oscillator passes through zero, from (1, 0).
@@ -397,7 +397,7 @@ end
     H = integrator("swing", Vern9(), swing; events = 3, TIGHT...)
     y0 = MX.sym("y0", 2)
     third = H(y0, MX(0.0), MX(50.0))
-    h = CasADiCodegen.Function("third", [y0], [third[1], third[2], jacobian(third[2], y0)])
+    h = CasADiNative.Function("third", [y0], [third[1], third[2], jacobian(third[2], y0)])
     @test closeto(ode_emitted(h, ([1.0, 0.0],)), [[0.0, -1.0], [π / 2, 3π / 2, 5π / 2], [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]], 1e-9)
     # Fewer events than asked before the final time.
     err = try ode_emitted(g, ([5.0], [9.81, 0.8], [1.5])); nothing catch e; e end
@@ -422,7 +422,7 @@ end
         cost = xf[1] * xf[2] + 3 * qf
         outputs = [cost; [gradient(cost, v) for v in inputs]]
         order == 2 && push!(outputs, jacobian(gradient(cost, x0), x0), jacobian(gradient(cost, q), x0))
-        CasADiCodegen.Function("costs", inputs, outputs)
+        CasADiNative.Function("costs", inputs, outputs)
     end
     forward = integrator("AF", Vern9(), dae; TIGHT...)
     backward = integrator("AB", Vern9(), dae; adjoint = true, TIGHT...)
@@ -442,18 +442,18 @@ end
     fixed = integrator("AX", Vern9(), dae, 0.5, 3.0; adjoint = true, TIGHT...)
     xf, qf = fixed(x0, q)
     cost = xf[1] * xf[2] + 3 * qf
-    g = CasADiCodegen.Function("fixed", [x0, q], [cost, gradient(cost, x0), gradient(cost, q)])
+    g = CasADiNative.Function("fixed", [x0, q], [cost, gradient(cost, x0), gradient(cost, q)])
     @test closeto(ode_emitted(g, point[1:2]), reference[1:3], 1e-9)
     y = SX.sym("y", 2)
     plain = integrator("AP", Vern9(), Dict("x" => y, "ode" => vertcat([y[2], -y[1]])), 0.0, 1.0; adjoint = true, TIGHT...)
     turned = plain(x0)
-    h = CasADiCodegen.Function("plain", [x0], [gradient(turned[1] + 2 * turned[2], x0)])
+    h = CasADiNative.Function("plain", [x0], [gradient(turned[1] + 2 * turned[2], x0)])
     @test closeto(ode_emitted(h, point[1:1]), [[cos(1.0) - 2 * sin(1.0), sin(1.0) + 2 * cos(1.0)]], 1e-10)
     # A grid of times is a chain of such arcs.
     grid = integrator("AG", Vern9(), dae, 0.5, [1.0, 3.0]; adjoint = true, TIGHT...)
     states, sums = grid(x0, q)
     last_cost = states[1, 2] * states[2, 2] + 3 * sums[2]
-    k = CasADiCodegen.Function("grid", [x0, q], [gradient(last_cost, q)])
+    k = CasADiNative.Function("grid", [x0, q], [gradient(last_cost, q)])
     @test closeto(ode_emitted(k, point[1:2]), reference[3:3], 1e-9)
 end
 
@@ -466,7 +466,7 @@ end
     cost(v) = (v[2] - v[3] * landing(v)) + 2 * landing(v)                # the speed at the ground and twice the time
     x0, q = MX.sym("x0", 2), MX.sym("q", 1)
     xe, te = F(x0, q, MX(0.0), MX(20.0))
-    f = CasADiCodegen.Function("f", [x0, q], [gradient(xe[2] + 2 * te, vertcat([x0, q]))])
+    f = CasADiNative.Function("f", [x0, q], [gradient(xe[2] + 2 * te, vertcat([x0, q]))])
     @test closeto(ode_emitted(f, ([10.0, 3.0], [9.81])), [ForwardDiff.gradient(cost, [10.0, 3.0, 9.81])], 1e-8)
 end
 
@@ -529,7 +529,7 @@ end
     x, p = SX.sym("x", 1), SX.sym("p", 1)
     F = CasADiCodegen.Codegen.ode_integrator("H", Dict("x" => x, "p" => p, "ode" => -p * x), 0.0, 1.0, runge_kutta)
     x0, q = MX.sym("x0", 1), MX.sym("q", 1)
-    f = CasADiCodegen.Function("f", [x0, q], [F(x0, q), jacobian(F(x0, q), x0), jacobian(F(x0, q), q)])
+    f = CasADiNative.Function("f", [x0, q], [F(x0, q), jacobian(F(x0, q), x0), jacobian(F(x0, q), q)])
     expected = [[3 * exp(-2)], [exp(-2)], [-3 * exp(-2)]]
     @test closeto(ode_emitted(f, ([3.0], [2.0])), expected, 1e-9)
     @test closeto(casadi_eval(f, [3.0], [2.0]), expected, 1e-9)
@@ -538,7 +538,7 @@ end
 @testset "options and failure of the solver" begin
     x0, p = MX.sym("x0", 4), MX.sym("p", 1)
     F = two_body_integrator(; maxiters = 3)
-    g = build_function(CasADiCodegen.Function("f", [x0, p], [F(x0, p)]); nonzeros = true, expression = Val{false})
+    g = build_function(CasADiNative.Function("f", [x0, p], [F(x0, p)]); nonzeros = true, expression = Val{false})
     error_text = redirect_stderr(devnull) do          # the solver also writes a warning
         try
             g([zeros(4)], (ODE_X0, ODE_MU))
@@ -557,7 +557,7 @@ end
     @test_throws "\"z\"" integrator("F", Vern9(), merge(dae, Dict("z" => SX.sym("z"))), 0.0, 1.0)
     @test_throws ArgumentError integrator("F", Vern9(), Dict("x" => x), 0.0, 1.0)
     @test_throws ArgumentError integrator("F", Vern9(), Dict("x" => x, "ode" => x[1]), 0.0, 1.0)
-    @test integrator("F", Vern9(), Dict("x" => x, "ode" => vertcat([x[2], SX(1, 1)])), 0.0, 1.0) isa CasADiCodegen.Function
+    @test integrator("F", Vern9(), Dict("x" => x, "ode" => vertcat([x[2], SX(1, 1)])), 0.0, 1.0) isa CasADiNative.Function
     @test_throws ArgumentError integrator("F", Vern9(), Dict("x" => SX.sym("x", 2, 2), "ode" => SX.sym("x", 2, 2)), 0.0, 1.0)
     @test_throws ArgumentError integrator("F", Vern9(), Dict("x" => x, "p" => SX.sym("p", 2, 2), "ode" => x), 0.0, 1.0)
     @test_throws ArgumentError integrator("F", Vern9(), merge(dae, Dict("t" => SX.sym("t", 2))), 0.0, 1.0)

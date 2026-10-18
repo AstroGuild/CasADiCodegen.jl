@@ -1,5 +1,5 @@
 using Documenter
-using CasADiCodegen
+using CasADiNative, CasADiCodegen
 import SciMLBase, ChainRulesCore, SparseArrays
 
 extension(name) = Base.get_extension(CasADiCodegen, name)

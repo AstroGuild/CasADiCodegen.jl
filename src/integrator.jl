@@ -297,8 +297,8 @@ column(v) = size(v, 2) == 1 && C.is_dense(v)
 flat(M) = reshape(M, length(M), 1)
 
 """
-    ode_integrator(name, dae, t0, tf, make_solver; adjoint = false, mass = Float64[]) -> CasADiCodegen.Function
-    ode_integrator(name, dae, make_solver; adjoint = false, mass = Float64[]) -> CasADiCodegen.Function
+    ode_integrator(name, dae, t0, tf, make_solver; adjoint = false, mass = Float64[]) -> CasADiNative.Function
+    ode_integrator(name, dae, make_solver; adjoint = false, mass = Float64[]) -> CasADiNative.Function
 
 Return the CasADi function `(x0, p) -> xf` that integrates the ordinary
 differential equation `dae` from `t0` to `tf`. Without `t0` and `tf` the times
@@ -371,7 +371,7 @@ function ode_integrator(name::AbstractString, dae, make_solver; adjoint::Bool = 
 end
 
 """
-    ode_event(name, dae, make_solver, make_event; adjoint = false, events = 1, terminal = true) -> CasADiCodegen.Function
+    ode_event(name, dae, make_solver, make_event; adjoint = false, events = 1, terminal = true) -> CasADiNative.Function
 
 Return the CasADi function `(x0, p, t0, tf) -> (xf, te)` that integrates `dae`
 from `t0` toward `tf` and stops at the event. The event is the first time `te`
@@ -477,7 +477,7 @@ function with_quadratures(dae)
 end
 
 """
-    split_function(name, inputs, result, n, names) -> CasADiCodegen.Function
+    split_function(name, inputs, result, n, names) -> CasADiNative.Function
 
 The function of the user for the `result` of an integration: the final state
 `"xf"`, which is its first `n` elements, and the quadratures `"qf"` when
@@ -491,7 +491,7 @@ function split_function(name::AbstractString, inputs, result, n::Integer, names)
 end
 
 """
-    ode_grid(name, dae, t0, times, make_solver; adjoint = false) -> CasADiCodegen.Function
+    ode_grid(name, dae, t0, times, make_solver; adjoint = false) -> CasADiNative.Function
 
 Return the CasADi function `(x0, p) -> X`, or `x0 -> X`, whose column `k` is
 the state at `times[k]` of the integration that starts at `t0`. With
@@ -539,7 +539,7 @@ function check_dae(name::AbstractString, dae; event::Bool = false)
 end
 
 """
-    state_rate(ode, x, p, t, mass) -> CasADiCodegen.Function
+    state_rate(ode, x, p, t, mass) -> CasADiNative.Function
 
 Return the function `(x, p, t) -> dx/dt` of the model `mass .* x' = ode` on its solution.
 A differential state has its right side as rate. An algebraic state `a` follows from the
@@ -561,7 +561,7 @@ function state_rate(ode, x, p, t, mass::Vector{Float64})
 end
 
 """
-    integration(name, dae, free, make_solver, tail = Float64[]; adjoint = false, mass = Float64[]) -> CasADiCodegen.Function
+    integration(name, dae, free, make_solver, tail = Float64[]; adjoint = false, mass = Float64[]) -> CasADiNative.Function
 
 Return the CasADi function of `ode_integrator` for a checked `dae`. With
 `free`, the last two parameters of `dae` are the initial and the final time,

@@ -18,7 +18,7 @@ function in the graph is. SparseArrays.jl is accepted by its known identity, and
 be in the environment.
 """
 function dependency(name::Symbol)
-    id = Base.identify_package(Front, String(name))
+    id = Base.identify_package(Package, String(name))
     id === nothing || return id
     name === :SparseArrays && return Base.PkgId(Base.UUID("2f01184e-e22b-5df5-ae63-d93ebab69eaf"), "SparseArrays")
     loaded = [id for id in keys(Base.loaded_modules) if id.name == String(name) && id.uuid !== nothing]

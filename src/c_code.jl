@@ -24,7 +24,7 @@ for an infinite value or NaN.
 c_real(token) = parse(Float64, replace(lowercase(token), "casadi_" => ""))
 
 """
-    c_source(f::CasADiCodegen.Function) -> CSource
+    c_source(f::CasADiNative.Function) -> CSource
 
 Generate the C code of `f` and read its tables and its statements. CasADi must
 be able to generate C code for `f`. CasADi leaves out the zeros at the end of a
@@ -66,7 +66,7 @@ end
 # does not tell through its interface, are read from that form by name.
 
 """
-    serial_bytes(f::CasADiCodegen.Function) -> Vector{UInt8}
+    serial_bytes(f::CasADiNative.Function) -> Vector{UInt8}
 
 Return the serial form of `f` with the names of its fields. CasADi gives it as
 text, in which each byte is two letters, `a` to `p`, for its two halves.

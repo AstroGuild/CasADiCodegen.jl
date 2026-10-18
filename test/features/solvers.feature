@@ -44,7 +44,7 @@ Feature: Solver objects of CasADi with solvers of the SciML ecosystem
 
   Scenario: Integrator of this package with algebraic states
     Given a model whose state has a mass of 0 for each algebraic state
-    When the user calls CasADiCodegen.integrator with the keyword mass and an algorithm for a mass matrix
+    When the user calls CasADiNative.integrator with the keyword mass and an algorithm for a mass matrix
     Then the result and its forward derivatives equal the exact solution, for any guess of the algebraic state
     And the derivatives by free times give the rate of an algebraic state from the algebraic equations
     And with adjoint = true the gradient and the Hessian come from the adjoint equations with the same mass

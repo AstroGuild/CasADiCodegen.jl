@@ -1,7 +1,7 @@
 # Compile the emitters when the package is precompiled, so that the first
 # `build_function` of a session does not pay for them.
 @compile_workload begin
-    C.__init__()    # Julia runs it after the module is complete; the workload needs it before
+    (; SX, MX, Function, jacobian) = CasADiNative
     x = SX.sym("x", 2)
     y = [sin(x[1]) * x[2] + 1; x[1]^2 / x[2]]
     scalar = Function("f", [x], [y, jacobian(y, x)])

@@ -8,7 +8,7 @@ using SpecialFunctions: erf
 @testset "ODEFunction from a CasADi function" begin
     dae = two_body()
     t = SX.sym("t")
-    rhs = CasADiCodegen.Function("rhs", [dae["x"], dae["p"], t], [dae["ode"] * (1 + 0 * t)])
+    rhs = CasADiNative.Function("rhs", [dae["x"], dae["p"], t], [dae["ode"] * (1 + 0 * t)])
     f = SciMLBase.ODEFunction(rhs)
     @test SciMLBase.isinplace(f)
     du, J, P = zeros(4), zeros(4, 4), zeros(4, 1)
@@ -26,21 +26,21 @@ using SpecialFunctions: erf
     @test closeto([solution.u[end]], casadi_eval(two_body_integrator(), ODE_X0, ODE_MU), 1e-10)
     # Functions of the state alone, and of the state and the parameters; other keywords go to ODEFunction.
     x = SX.sym("x", 2)
-    g = SciMLBase.ODEFunction(CasADiCodegen.Function("g", [x], [vertcat(x[2], -x[1])]); jac_prototype = zeros(2, 2))
+    g = SciMLBase.ODEFunction(CasADiNative.Function("g", [x], [vertcat(x[2], -x[1])]); jac_prototype = zeros(2, 2))
     @test g.jac_prototype == zeros(2, 2) && g.paramjac === nothing
     d2 = zeros(2)
     g(d2, [1.0, 2.0], nothing, 0.0)
     @test d2 == [2.0, -1.0]
     k = SX.sym("k")
-    h = SciMLBase.ODEFunction(CasADiCodegen.Function("h", [x, k], [x * k]); jac = false)
+    h = SciMLBase.ODEFunction(CasADiNative.Function("h", [x, k], [x * k]); jac = false)
     @test h.jac === nothing
-    @test_throws ArgumentError SciMLBase.ODEFunction(CasADiCodegen.Function("w", [x], [x[1]]))                 # not the size of the state
-    @test_throws ArgumentError SciMLBase.ODEFunction(CasADiCodegen.Function("w", [x, k, SX.sym("t"), SX.sym("s")], [x]))           # too many arguments
+    @test_throws ArgumentError SciMLBase.ODEFunction(CasADiNative.Function("w", [x], [x[1]]))                 # not the size of the state
+    @test_throws ArgumentError SciMLBase.ODEFunction(CasADiNative.Function("w", [x, k, SX.sym("t"), SX.sym("s")], [x]))           # too many arguments
 end
 
 @testset "NonlinearFunction from a CasADi function" begin
     z, b = SX.sym("z", 2), SX.sym("b", 2)
-    f = SciMLBase.NonlinearFunction(CasADiCodegen.Function("r", [z, b], [vertcat(z[1]^3 + z[2], z[2] * 2) - b]))
+    f = SciMLBase.NonlinearFunction(CasADiNative.Function("r", [z, b], [vertcat(z[1]^3 + z[2], z[2] * 2) - b]))
     r, J = zeros(2), zeros(2, 2)
     f(r, [1.0, 2.0], [0.5, 1.0])
     @test r == [2.5, 3.0]
@@ -48,13 +48,13 @@ end
     @test J == [3.0 1.0; 0.0 2.0]
     solution = SciMLBase.solve(SciMLBase.NonlinearProblem(f, [1.0, 1.0], [9.0, 2.0]), SimpleNewtonRaphson(); abstol = 1e-12)
     @test solution.u ≈ [2.0, 1.0]
-    @test_throws ArgumentError SciMLBase.NonlinearFunction(CasADiCodegen.Function("w", [z], [z[1]]))
+    @test_throws ArgumentError SciMLBase.NonlinearFunction(CasADiNative.Function("w", [z], [z[1]]))
 end
 
 @testset "OptimizationFunction from CasADi functions" begin
     x, p = SX.sym("x", 3), SX.sym("p", 2)
-    objective = CasADiCodegen.Function("cost", [x, p], [p[1] * x[1]^2 * x[2] + sin(x[3]) * p[2]])
-    constraints = CasADiCodegen.Function("cons", [x, p], [vertcat(x[1] * x[2] * x[3] - p[1], x[1]^2 + x[3]^2)])
+    objective = CasADiNative.Function("cost", [x, p], [p[1] * x[1]^2 * x[2] + sin(x[3]) * p[2]])
+    constraints = CasADiNative.Function("cons", [x, p], [vertcat(x[1] * x[2] * x[3] - p[1], x[1]^2 + x[3]^2)])
     f = SciMLBase.OptimizationFunction(objective, constraints)
     xv, pv = [1.0, 2.0, 0.5], [3.0, 4.0]
     cost(u) = pv[1] * u[1]^2 * u[2] + sin(u[3]) * pv[2]
@@ -76,19 +76,19 @@ end
     # OptimizationBase.jl cannot call a Hessian of the Lagrange function that the user gives, so there is none.
     @test f.lag_h === nothing
     # No constraints, and no parameters.
-    alone = SciMLBase.OptimizationFunction(CasADiCodegen.Function("c", [x], [sum(x[i]^2 for i in 1:3)]))
+    alone = SciMLBase.OptimizationFunction(CasADiNative.Function("c", [x], [sum(x[i]^2 for i in 1:3)]))
     @test alone.f(xv, nothing) ≈ sum(abs2, xv) && alone.cons === nothing && alone.cons_h === nothing
     alone.hess(L, xv, nothing)
     @test L ≈ 2.0 * [1 0 0; 0 1 0; 0 0 1]
-    @test_throws ArgumentError SciMLBase.OptimizationFunction(CasADiCodegen.Function("w", [x], [x]))                        # not a scalar
-    @test_throws ArgumentError SciMLBase.OptimizationFunction(objective, CasADiCodegen.Function("w", [SX.sym("y", 2), p], [p]))  # another unknown
+    @test_throws ArgumentError SciMLBase.OptimizationFunction(CasADiNative.Function("w", [x], [x]))                        # not a scalar
+    @test_throws ArgumentError SciMLBase.OptimizationFunction(objective, CasADiNative.Function("w", [SX.sym("y", 2), p], [p]))  # another unknown
 end
 
 # A solver object of CasADi holds a problem: its equations and its data. The
 # constructors of the SciML problems take the object, so that the user solves
 # the problem with a solver of the SciML ecosystem.
 using OrdinaryDiffEqRosenbrock: Rodas5P
-const CC = CasADiCodegen.casadi
+const CC = CasADiNative.casadi
 
 @testset "ODEProblem from an integrator of CasADi" begin
     x, p, t, c = MX.sym("x", 2), MX.sym("p"), MX.sym("t"), MX.sym("c")
@@ -161,12 +161,12 @@ const CC = CasADiCodegen.casadi
         finals, sums = ball_reference([1.5, 2.0], 0.8, [9.81, 5.0, 12.0], [0.6, 1.4, 2.5])
         @test reduce(vcat, solution.u) ≈ vec([reshape(finals, 2, 3); sums']) rtol = 1e-9
     end
-    @test_throws "is not an integrator of CasADi" SciMLBase.ODEProblem(CasADiCodegen.Function("f", [x], [2x]), [0.4, -0.3])
+    @test_throws "is not an integrator of CasADi" SciMLBase.ODEProblem(CasADiNative.Function("f", [x], [2x]), [0.4, -0.3])
 end
 
 @testset "NonlinearProblem from a rootfinder of CasADi" begin
     a, x, b = MX.sym("a"), MX.sym("x", 2), MX.sym("b", 2)
-    residual = CasADiCodegen.Function("r", [a, x, b], [x * a, x^2 - a * b])
+    residual = CasADiNative.Function("r", [a, x, b], [x * a, x^2 - a * b])
     @testset "$plugin" for plugin in ("newton", "kinsol", "fast_newton")
         finder = CC.rootfinder("finder", plugin, residual, Dict("implicit_input" => true, "implicit_output" => true))
         # The parameters are the other arguments of the rootfinder, in their order.
@@ -208,5 +208,5 @@ end
     plain = SciMLBase.OptimizationProblem(CC.nlpsol("plain", "ipopt", Dict("x" => v, "f" => CC.sumsqr(v - 1))), [0.1, 0.2])
     @test plain.f.f([1.0, 3.0], plain.p) ≈ 4.0 && plain.lcons === nothing && plain.f.cons === nothing
     @test_throws "the unknowns must have 2 numbers" SciMLBase.OptimizationProblem(solver, [0.1], [0.3])
-    @test_throws "is not a solver of CasADi for optimization problems" SciMLBase.OptimizationProblem(CasADiCodegen.Function("f", [v], [2v]), [0.1, 0.2])
+    @test_throws "is not a solver of CasADi for optimization problems" SciMLBase.OptimizationProblem(CasADiNative.Function("f", [v], [2v]), [0.1, 0.2])
 end

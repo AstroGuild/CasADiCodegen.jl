@@ -1,6 +1,6 @@
 # Solve an equation
 
-[`CasADiCodegen.rootfinder`](@ref) makes a CasADi function that solves `f(z, p1, p2, ...) = 0`
+[`CasADiNative.rootfinder`](@ref) makes a CasADi function that solves `f(z, p1, p2, ...) = 0`
 for `z` with a nonlinear solver of the SciML ecosystem. The residual `f` is a CasADi
 function whose result has the size of `z`. Add a solver package to your environment,
 for example SimpleNonlinearSolve.jl: `rootfinder` has no methods until one is loaded.
@@ -8,16 +8,16 @@ for example SimpleNonlinearSolve.jl: `rootfinder` has no methods until one is lo
 The example solves the equation of Kepler for the eccentric anomaly:
 
 ```@example root
-using CasADiCodegen
+using CasADiNative, CasADiCodegen
 using SimpleNonlinearSolve: SimpleNewtonRaphson
 
 E, M, e = SX.sym("E"), SX.sym("M"), SX.sym("e")
-kepler = CasADiCodegen.Function("kepler", [E, M, e], [E - e * sin(E) - M])
+kepler = CasADiNative.Function("kepler", [E, M, e], [E - e * sin(E) - M])
 anomaly = rootfinder("anomaly", SimpleNewtonRaphson(), kepler; abstol = 1e-14)
 
 m, ec = MX.sym("m"), MX.sym("ec")
 root = anomaly(m, m, ec)                      # the mean anomaly is the first guess
-f = CasADiCodegen.Function("f", [m, ec], [root, jacobian(root, m)])
+f = CasADiNative.Function("f", [m, ec], [root, jacobian(root, m)])
 g, g! = build_function(f; expression = Val{false})
 g([1.0], [0.3])
 ```

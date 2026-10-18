@@ -50,12 +50,12 @@ Feature: Julia code for the functions and nodes of CasADi that have no instructi
     When the generated code runs
     Then the states, the quadratures and their forward and adjoint sensitivities equal those of CasADi
     And the derivatives of the second order, and two adjoint directions at once, equal those of CasADi
-    But an integrator with an event function gives an error that names CasADiCodegen.integrator and its events
+    But an integrator with an event function gives an error that names CasADiNative.integrator and its events
 
   Scenario: Function with no Julia code
     Given a graph that calls a rootfinder of CasADi with the method nlpsol, or a callback of a subtype of CasadiCallback
     When the user builds the code
-    Then an error names the function and its class, or says to make the callback with CasADiCodegen.callback
+    Then an error names the function and its class, or says to make the callback with CasADiNative.callback
 
   Scenario: Written module
     When the user writes a function with such a node or solver to a module

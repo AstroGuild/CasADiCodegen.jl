@@ -1,11 +1,11 @@
 # Names that more than one group of tests uses. Each group runs in a process
 # of its own, so a group cannot take a helper from the file of another group.
 using Test
-using CasADiCodegen
+using CasADiNative, CasADiCodegen
 using Supposition
 using Supposition: Data
 
-const C = CasADiCodegen.C
+const C = CasADiNative.C
 const Algorithm = CasADiCodegen.Codegen.Algorithm
 const I = CasADiCodegen.Codegen.Instruction
 

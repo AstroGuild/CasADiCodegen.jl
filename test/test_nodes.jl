@@ -45,7 +45,7 @@ const SPLINE_KNOTS = [[0.0, 0, 0, 1, 2.5, 3, 3, 3], [0.0, 0, 1, 2, 2]]       # d
     @testset "fixed coefficients, lookup $mode" for mode in ("linear", "binary")
         options = Dict("lookup_mode" => [mode, mode])
         value = C.bspline(x, C.DM(coefficients), SPLINE_KNOTS, [2, 1], 2, options)
-        f = CasADiCodegen.Function("spline", [x], [value, C.jacobian(value, x)])
+        f = CasADiNative.Function("spline", [x], [value, C.jacobian(value, x)])
         @test :OP_BSPLINE in node_ops(f)
         g = native(f)
         @test all(all_agree(evaluated(g, f, [p]), mx_casadi(f, [p])) for p in SPLINE_POINTS)
@@ -60,7 +60,7 @@ const SPLINE_KNOTS = [[0.0, 0, 0, 1, 2.5, 3, 3, 3], [0.0, 0, 1, 2, 2]]       # d
     end
     @testset "coefficients that are an argument" begin
         value = C.bspline(x, c, SPLINE_KNOTS, [2, 1], 2, Dict())
-        f = CasADiCodegen.Function("spline", [x, c], [value, C.jacobian(value, x), C.jacobian(value, c)])
+        f = CasADiNative.Function("spline", [x, c], [value, C.jacobian(value, x), C.jacobian(value, c)])
         @test :OP_BSPLINE in node_ops(f)
         g = native(f)
         @test all(all_agree(evaluated(g, f, [p, coefficients]), mx_casadi(f, [p, coefficients])) for p in SPLINE_POINTS)
@@ -69,7 +69,7 @@ const SPLINE_KNOTS = [[0.0, 0, 0, 1, 2.5, 3, 3, 3], [0.0, 0, 1, 2, 2]]       # d
     @testset "one dimension, degree $degree" for degree in 0:3
         knots = [fill(0.0, degree); [0.0, 1.0, 1.5, 4.0]; fill(4.0, degree)]
         t = MX.sym("t")
-        f = CasADiCodegen.Function("curve", [t], [C.bspline(t, C.DM([1.0 + k^2 for k in 1:3+degree]), [knots], [degree], 1, Dict())])
+        f = CasADiNative.Function("curve", [t], [C.bspline(t, C.DM([1.0 + k^2 for k in 1:3+degree]), [knots], [degree], 1, Dict())])
         g = native(f)
         # At a knot the constant spline of CasADi writes out of its work space, so those points are left out for degree 0.
         points = degree == 0 ? (0.5, 1.2, 3.9, -1.0, 5.0) : (0.0, 0.5, 1.0, 1.2, 1.5, 3.9, 4.0, -1.0, 5.0)
@@ -79,7 +79,7 @@ end
 
 @testset "place in a grid, lookup $mode" for mode in ("linear", "exact", "binary")
     v, x = MX.sym("v", 6), MX.sym("x", 5)
-    f = CasADiCodegen.Function("place", [v, x], [C.low(v, x, Dict("lookup_mode" => mode))])
+    f = CasADiNative.Function("place", [v, x], [C.low(v, x, Dict("lookup_mode" => mode))])
     grid = [-1.0, -0.4, 0.2, 0.8, 1.4, 2.0]
     for numbers in ([-3.0, -1.0, -0.4, 0.21, 0.8], [1.39, 1.4, 2.0, 2.5, 0.5], [0.2, 0.19999999999999998, 0.20000000000000004, 1.9, -0.99], [NaN, Inf, -Inf, 0.0, 1.0])
         @test isequal(evaluated(native(f), f, [grid, numbers]), mx_casadi(f, [grid, numbers]))
@@ -89,8 +89,8 @@ end
 @testset "sum of blocks" begin
     B = MX.sym("B", 2, 6)
     S = MX.sym("S", C.repmat(C.Sparsity.lower(2), 1, 3))
-    for (f, n) in ((CasADiCodegen.Function("blocks", [B], [C.repsum(B, 1, 3), C.repsum(B, 2, 1)]), 12),
-                   (CasADiCodegen.Function("sparse_blocks", [S], [C.repsum(S, 1, 3)]), 9))
+    for (f, n) in ((CasADiNative.Function("blocks", [B], [C.repsum(B, 1, 3), C.repsum(B, 2, 1)]), 12),
+                   (CasADiNative.Function("sparse_blocks", [S], [C.repsum(S, 1, 3)]), 9))
         values = [[0.37k - 1.3 for k in 1:n]]
         @test :OP_HORZREPSUM in node_ops(f)
         @test isequal(evaluated(native(f), f, values), mx_casadi(f, values))
@@ -100,7 +100,7 @@ end
 
 @testset "assertion" begin
     x, y = MX.sym("x", 3), MX.sym("y", 3)
-    f = CasADiCodegen.Function("checked", [x, y], [2 * C.attachAssert(x, y[1] > 0, "the first number must be positive")])
+    f = CasADiNative.Function("checked", [x, y], [2 * C.attachAssert(x, y[1] > 0, "the first number must be positive")])
     @test :OP_ASSERTION in node_ops(f)
     g = native(f)
     @test evaluated(g, f, [[1.0, 2.0, 3.0], [0.5, 0.0, 0.0]]) == [[2.0, 4.0, 6.0]]
@@ -109,7 +109,7 @@ end
     @test written(f, [[1.0, 2.0, 3.0], [0.5, 0.0, 0.0]]) == [[2.0, 4.0, 6.0]]
     # An assertion without a text, on the value itself.
     s = MX.sym("s")
-    plain = CasADiCodegen.Function("plain", [s], [C.attachAssert(s, s)])
+    plain = CasADiNative.Function("plain", [s], [C.attachAssert(s, s)])
     @test evaluated(native(plain), plain, [[1.0]]) == [[1.0]]
     @test_throws AssertionError("") evaluated(native(plain), plain, [[2.0]])
 end
@@ -117,7 +117,7 @@ end
 @testset "first nonzero" begin
     pattern = C.Sparsity.triplet(6, 1, [1, 3, 4], [0, 0, 0])
     s, v = MX.sym("s", pattern), MX.sym("v", 3)
-    f = CasADiCodegen.Function("first", [s, v], [C.find(s), C.find(v)])
+    f = CasADiNative.Function("first", [s, v], [C.find(s), C.find(v)])
     @test :OP_FIND in node_ops(f)
     g = native(f)
     for values in ([0.0, 0, 0], [0.0, 2, 0], [0.0, 0, 5], [1.0, 0, 0], [0.0, NaN, 1.0])
@@ -128,7 +128,7 @@ end
 
 @testset "print and pass" begin
     x, y = MX.sym("x", 2), MX.sym("y", 2)
-    f = CasADiCodegen.Function("shown", [x, y], [2 * C.printme(x, y)])
+    f = CasADiNative.Function("shown", [x, y], [2 * C.printme(x, y)])
     @test :OP_PRINTME in node_ops(f)
     g = native(f)
     result = [zeros(2)]
@@ -136,17 +136,17 @@ end
     @test result == [[3.0, 4.0]]
     # The scalar form of the same operation.
     a, b = SX.sym("a"), SX.sym("b")
-    scalar = build_function(CasADiCodegen.Function("shown", [a, b], [C.printme(a, b) + 1]); nonzeros = true, expression = Val{false})
+    scalar = build_function(CasADiNative.Function("shown", [a, b], [C.printme(a, b) + 1]); nonzeros = true, expression = Val{false})
     @test printed(() -> scalar(result, ([0.5], [3.0]))) == "|> 3.0 : 0.5\n"
     @test result[1][1] == 1.5
 end
 
 @testset "tensor product" begin
     A, B, y = MX.sym("A", 24), MX.sym("B", 12), MX.sym("y", 2)
-    cases = ["one index left" => CasADiCodegen.Function("t", [A, B, y], [C.einstein(A, B, [2, 3, 4], [4, 3], [2], [-1, -2, -3], [-3, -2], [-1])]),
-             "added to a value" => CasADiCodegen.Function("t", [A, B, y], [C.einstein(A, B, y, [2, 3, 4], [4, 3], [2], [-1, -2, -3], [-3, -2], [-1])]),
-             "outer product" => CasADiCodegen.Function("t", [A, B, y], [C.einstein(B, y, [12], [2], [12, 2], [-1], [-2], [-1, -2])]),
-             "its gradient" => CasADiCodegen.Function("t", [A, B, y], [C.gradient(C.dot(C.einstein(A, B, [2, 3, 4], [4, 3], [2], [-1, -2, -3], [-3, -2], [-1]), y), A)])]
+    cases = ["one index left" => CasADiNative.Function("t", [A, B, y], [C.einstein(A, B, [2, 3, 4], [4, 3], [2], [-1, -2, -3], [-3, -2], [-1])]),
+             "added to a value" => CasADiNative.Function("t", [A, B, y], [C.einstein(A, B, y, [2, 3, 4], [4, 3], [2], [-1, -2, -3], [-3, -2], [-1])]),
+             "outer product" => CasADiNative.Function("t", [A, B, y], [C.einstein(B, y, [12], [2], [12, 2], [-1], [-2], [-1, -2])]),
+             "its gradient" => CasADiNative.Function("t", [A, B, y], [C.gradient(C.dot(C.einstein(A, B, [2, 3, 4], [4, 3], [2], [-1, -2, -3], [-3, -2], [-1]), y), A)])]
     @testset "$label" for (label, f) in cases
         @test :OP_EINSTEIN in node_ops(f)
         values = mx_inputs(f)
@@ -157,7 +157,7 @@ end
 
 @testset "contracted Kronecker product" begin
     A, B, D = MX.sym("A", 4, 6), MX.sym("B", 2, 3), MX.sym("D", 2, 2)
-    f = CasADiCodegen.Function("contract", [A, B, D], [C.kron_contract(A, B, true), C.kron_contract(A, D, false)])
+    f = CasADiNative.Function("contract", [A, B, D], [C.kron_contract(A, B, true), C.kron_contract(A, D, false)])
     @test :OP_KRON_CONTRACT in node_ops(f)
     values = mx_inputs(f)
     @test isequal(evaluated(native(f), f, values), mx_casadi(f, values))
@@ -168,7 +168,7 @@ end
     pattern = C.Sparsity.lower(2)
     v = MX.sym("v", pattern)
     cd(mktempdir()) do
-        f = CasADiCodegen.Function("traced", [v], [2 * C.dump(v, "trace")])
+        f = CasADiNative.Function("traced", [v], [2 * C.dump(v, "trace")])
         @test :OP_DUMP in node_ops(f)
         g = native(f)
         @test evaluated(g, f, [[1.0, 3.0, 4.5]]) == [[2.0, 6.0, 9.0]]
@@ -201,7 +201,7 @@ const TABLE_POINTS = [[0.3, 0.7], [1.0, 2.0], [4.99, 3.9], [-1.0, 5.0], [6.0, -2
     coefficients = [cos(0.4k) + 0.1k for k in 1:40]
     @testset "$kind with fixed values, lookup $modes" for (kind, modes) in (("linear", ["linear", "linear"]), ("bspline", ["binary", "linear"]))
         table = C.interpolant("table", kind, TABLE_GRID, values, Dict("lookup_mode" => modes))
-        f = CasADiCodegen.Function("f", [x], [table(x) * 2, C.jacobian(table(x), x), CasADiCodegen.hessian(table(x), x)])
+        f = CasADiNative.Function("f", [x], [table(x) * 2, C.jacobian(table(x), x), CasADiNative.hessian(table(x), x)])
         g = native(f)
         @test all(all_agree(evaluated(g, f, [p]), mx_casadi(f, [p]); rtol = 1e-10) for p in TABLE_POINTS)
         kind == "bspline" && continue       # the written module and the dual numbers take one path for both kinds
@@ -211,13 +211,13 @@ const TABLE_POINTS = [[0.3, 0.7], [1.0, 2.0], [4.99, 3.9], [-1.0, 5.0], [6.0, -2
     end
     @testset "$kind with values that are an argument" for kind in ("linear", "bspline")
         table = C.interpolant("table", kind, TABLE_GRID, 2)
-        f = CasADiCodegen.Function("f", [x, c], [table(x, c), C.jacobian(table(x, c), x), C.jacobian(table(x, c), c)])
+        f = CasADiNative.Function("f", [x, c], [table(x, c), C.jacobian(table(x, c), x), C.jacobian(table(x, c), c)])
         g = native(f)
         @test all(all_agree(evaluated(g, f, [p, coefficients]), mx_casadi(f, [p, coefficients]); rtol = 1e-8) for p in TABLE_POINTS)
     end
     @testset "a grid with equal steps and the exact lookup" begin
         table = C.interpolant("table", "linear", [[0.0, 0.5, 1.0, 1.5], [1.0, 2.0, 3.0]], collect(1.0:12.0) .^ 1.5, Dict("lookup_mode" => ["exact", "exact"]))
-        f = CasADiCodegen.Function("f", [x], [table(x), C.gradient(table(x), x)])
+        f = CasADiNative.Function("f", [x], [table(x), C.gradient(table(x), x)])
         @test all(all_agree(evaluated(native(f), f, [p]), mx_casadi(f, [p]); rtol = 1e-10) for p in ([0.2, 1.3], [1.2, 2.9], [0.5, 2.0], [-1.0, 0.0], [2.0, 3.5]))
     end
     @testset "the interpolant itself" begin
@@ -229,10 +229,10 @@ end
 
 @testset "a map on threads is a loop" begin
     x = MX.sym("x", 2)
-    body = CasADiCodegen.Function("body", [x], [C.sin(x) * x[1]])
+    body = CasADiNative.Function("body", [x], [C.sin(x) * x[1]])
     X = MX.sym("X", 2, 3)
     @testset "$kind" for kind in ("thread", "openmp")
-        f = CasADiCodegen.Function("f", [X], [C.map(body, 3, kind)(X) + 1])
+        f = CasADiNative.Function("f", [X], [C.map(body, 3, kind)(X) + 1])
         @test isequal(evaluated(native(f), f, mx_inputs(f)), mx_casadi(f, mx_inputs(f)))
     end
 end
@@ -247,7 +247,7 @@ end
     else
         directory = mktempdir()
         a, q = SX.sym("a", 2), SX.sym("q")
-        model = CasADiCodegen.Function("model", [a, q], [C.sin(a) * q, C.dot(a, a), SX(2, 1)])
+        model = CasADiNative.Function("model", [a, q], [C.sin(a) * q, C.dot(a, a), SX(2, 1)])
         cd(directory) do
             C.generate(model, "model.c", Dict("with_header" => false))
             run(`$compiler -shared -fPIC -O1 model.c -o libmodel.so`)
@@ -255,7 +255,7 @@ end
         external = C.external("model", joinpath(directory, "libmodel.so"))
         @test K.external_library(external) == joinpath(directory, "libmodel.so")
         x, p = MX.sym("x", 2), MX.sym("p")
-        f = CasADiCodegen.Function("f", [x, p], [external(x, p)[1] * 2 + external(2 * x, p)[2], external(x, p)[3]])
+        f = CasADiNative.Function("f", [x, p], [external(x, p)[1] * 2 + external(2 * x, p)[2], external(x, p)[3]])
         g = native(f)
         values = [[0.4, -1.1], [2.5]]
         @test isequal(evaluated(g, f, values), mx_casadi(f, values))
@@ -278,12 +278,12 @@ end
 # The Newton rootfinder of CasADi is the same iteration in Julia code.
 @testset "Newton rootfinder of CasADi" begin
     x, L, a = MX.sym("x", 2), MX.sym("L", C.Sparsity.lower(2)), MX.sym("a")
-    residual = CasADiCodegen.Function("residual", [x, L], [C.mtimes(L, x) + x^3 - 1])
+    residual = CasADiNative.Function("residual", [x, L], [C.mtimes(L, x) + x^3 - 1])
     values = [[0.4, 0.9], [1.3, 0.2, 0.7]]
     @testset "$label" for (label, options) in ("the options of CasADi" => Dict(), "no line search" => Dict("line_search" => false),
                                                 "other tolerances" => Dict("abstol" => 1e-6, "abstolStep" => 1e-3))
         newton = C.rootfinder("newton", "newton", residual, options)
-        f = CasADiCodegen.Function("f", [x, L], [newton(x, L), C.jacobian(newton(x, L), L)])
+        f = CasADiNative.Function("f", [x, L], [newton(x, L), C.jacobian(newton(x, L), L)])
         g = native(f)
         @test all_agree(evaluated(g, f, values), mx_casadi(f, values); rtol = 1e-11)
         isempty(options) || continue        # the options change numbers of the iteration only
@@ -293,9 +293,9 @@ end
         @test @allocated(g(results, arguments)) <= 1024       # 304 bytes on Julia 1.13, for the calls of the solver; the bound leaves room for another version
     end
     # The unknown is the second input, the residual is the second result, and the other result is given at the root.
-    shifted = CasADiCodegen.Function("shifted", [a, x], [x * a, x^2 - a])
+    shifted = CasADiNative.Function("shifted", [a, x], [x * a, x^2 - a])
     newton = C.rootfinder("newton", "newton", shifted, Dict("implicit_input" => true, "implicit_output" => true))
-    f = CasADiCodegen.Function("f", [a, x], collect(newton(a, x)))
+    f = CasADiNative.Function("f", [a, x], collect(newton(a, x)))
     g = native(f)
     @test all_agree(evaluated(g, f, [[2.0], [3.0, 1.0]]), mx_casadi(f, [[2.0], [3.0, 1.0]]); rtol = 1e-12)
     # Dual numbers go through the iteration: the derivative of the root of x^2 = a is 1 / (2 x).
@@ -303,13 +303,13 @@ end
     @test slope ≈ 1 / (2 * sqrt(2.0)) rtol = 1e-10
     # The front end gives a whole number as 1, so this is a limit of one iteration: CasADi fails, and so does the code.
     limited(options) = (r = C.rootfinder("limited", "newton", shifted, merge(Dict{String,Any}("implicit_input" => true, "implicit_output" => true), options));
-                        CasADiCodegen.Function("f", [a, x], collect(r(a, x))))
+                        CasADiNative.Function("f", [a, x], collect(r(a, x))))
     @test_throws "the Newton rootfinder \"limited\" failed" evaluated(native(limited(Dict("max_iter" => 1))), limited(Dict("max_iter" => 1)), [[2.0], [3.0, 1.0]])
     quiet = limited(Dict("max_iter" => 1, "error_on_fail" => false))
     @test all_agree(evaluated(native(quiet), quiet, [[2.0], [3.0, 1.0]]), mx_casadi(quiet, [[2.0], [3.0, 1.0]]); rtol = 1e-12)
     # No step above the tolerance makes this residual smaller, so the line search fails as that of CasADi does.
-    stuck = C.rootfinder("stuck", "newton", CasADiCodegen.Function("r", [a], [a^2 + 1]), Dict("error_on_fail" => false, "abstolStep" => 1.0))
-    h = CasADiCodegen.Function("h", [a], [stuck(a)])
+    stuck = C.rootfinder("stuck", "newton", CasADiNative.Function("r", [a], [a^2 + 1]), Dict("error_on_fail" => false, "abstolStep" => 1.0))
+    h = CasADiNative.Function("h", [a], [stuck(a)])
     @test all(all_agree(evaluated(native(h), h, [[start]]), mx_casadi(h, [[start]]); rtol = 1e-12) for start in (0.1, 0.5))
     @test evaluated(native(h), h, [[0.1]]) == [[0.1]]
 end
@@ -324,7 +324,7 @@ end
         rule = C.integrator("rule", plugin, dae, 0.0, [0.5, 1.0, 2.0])
         run(x0, parameter, controls) = rule(x0, MX(0, 1), parameter, controls, MX(), MX(), MX())
         final, quadrature = run(x, p, u)[1], run(x, p, u)[3]
-        f = CasADiCodegen.Function("f", [x, p, u], [final, quadrature, C.jacobian(final, x), C.jacobian(quadrature, p), C.jacobian(final[:, 3], u)])
+        f = CasADiNative.Function("f", [x, p, u], [final, quadrature, C.jacobian(final, x), C.jacobian(quadrature, p), C.jacobian(final[:, 3], u)])
         g = native(f)
         @test all_agree(evaluated(g, f, values), mx_casadi(f, values); rtol = 1e-10)
         # Dual numbers go through the steps. The code of the steps does not depend on the method, so one method shows it.
@@ -334,7 +334,7 @@ end
         end
         # The adjoint sensitivities are the reverse derivative of the same loop, so one method shows them too.
         if plugin == "collocation"
-            cost = CasADiCodegen.Function("cost", [x, p, u], [C.gradient(C.sumsqr(final) + quadrature[3], C.vertcat([x, p, C.vec(u)]))])
+            cost = CasADiNative.Function("cost", [x, p, u], [C.gradient(C.sumsqr(final) + quadrature[3], C.vertcat([x, p, C.vec(u)]))])
             @test all_agree(evaluated(native(cost), cost, values), mx_casadi(cost, values); rtol = 1e-9)
         end
     end
@@ -343,13 +343,13 @@ end
         wide = MX.sym("wide", 6)
         many = C.integrator("many", "collocation", Dict("x" => x, "p" => wide, "ode" => -C.sum1(wide) * x^2 + wide[1:2], "quad" => x[1] * wide[3]), 0.0, [0.5, 1.0])
         reached = many(x, MX(0, 1), wide, MX(0, 1), MX(), MX(), MX())
-        rows = CasADiCodegen.Function("rows", [x, wide], [C.jacobian(reached[1][:, 2], wide), C.jacobian(C.vertcat([reached[3][2], reached[1][1, 1]]), wide)])
+        rows = CasADiNative.Function("rows", [x, wide], [C.jacobian(reached[1][:, 2], wide), C.jacobian(C.vertcat([reached[3][2], reached[1][1, 1]]), wide)])
         point = [values[1], [0.3, -0.2, 0.5, 0.1, 0.4, 0.2]]
         @test all_agree(evaluated(native(rows), rows, point), mx_casadi(rows, point); rtol = 1e-9)
     end
     @testset "a written module has the solver" begin
         rule = C.integrator("rule", "collocation", Dict("x" => x, "p" => p, "ode" => -p * x), 0.0, 1.0)
-        f = CasADiCodegen.Function("f", [x, p], [rule(x, MX(0, 1), p, MX(0, 1), MX(), MX(), MX())[1]])
+        f = CasADiNative.Function("f", [x, p], [rule(x, MX(0, 1), p, MX(0, 1), MX(), MX(), MX())[1]])
         @test all_agree(written(f, values[1:2]), mx_casadi(f, values[1:2]); rtol = 1e-10)
     end
     @testset "derivatives of the second order" begin
@@ -357,7 +357,7 @@ end
         rule = C.integrator("rule", "collocation", Dict("x" => x, "p" => w, "u" => control, "ode" => -w[1] * x^2 * w[2] + control, "quad" => x[1] * w[1]), 0.0, [0.5, 1.0])
         result = rule(x, MX(0, 1), w, u[1:2], MX(), MX(), MX())
         cost = C.sumsqr(result[1]) + result[3][2]
-        f = CasADiCodegen.Function("f", [x, w, u], [CasADiCodegen.hessian(cost, w), C.jacobian(C.jacobian(result[1][:, 2], w), x), C.jacobian(C.gradient(cost, x), u)])
+        f = CasADiNative.Function("f", [x, w, u], [CasADiNative.hessian(cost, w), C.jacobian(C.jacobian(result[1][:, 2], w), x), C.jacobian(C.gradient(cost, x), u)])
         points = [values[1], [1.7, 0.6], values[3]]
         @test all_agree(evaluated(native(f), f, points), mx_casadi(f, points); rtol = 1e-8)
     end
@@ -379,7 +379,7 @@ end
         strategy == "regularize" && occursin("triangle", label) && continue       # CasADi refuses it
         strategy == "eigen-reflect" && label != "dense" && continue                # it differs from eigen-clip by the sign of an eigenvalue only
         H = MX.sym("H", pattern)
-        f = CasADiCodegen.Function("convex", [H], [C.convexify(2 * H, Dict("strategy" => strategy, "margin" => 1e-3)), C.convexify(H, Dict("strategy" => strategy))])
+        f = CasADiNative.Function("convex", [H], [C.convexify(2 * H, Dict("strategy" => strategy, "margin" => 1e-3)), C.convexify(H, Dict("strategy" => strategy))])
         @test :OP_CONVEXIFY in node_ops(f)
         g = native(f)
         @test all(all_agree(evaluated(g, f, [v]), mx_casadi(f, [v]); rtol = 1e-11) for v in values)
@@ -387,7 +387,7 @@ end
     end
     @testset "dual numbers" begin
         H = MX.sym("H", 3, 3)
-        f = CasADiCodegen.Function("convex", [H], [C.convexify(H, Dict("strategy" => "eigen-reflect"))])
+        f = CasADiNative.Function("convex", [H], [C.convexify(H, Dict("strategy" => "eigen-reflect"))])
         g, value, direction = native(f), [2.0, 1, 0.3, 1, -3, 0.5, 0.3, 0.5, 1], [0.1, 0.2, 0, 0.2, -0.3, 0.1, 0, 0.1, 0.4]
         run(s) = g([zeros(typeof(s), 9)], (value .+ s .* direction,))[1]
         h = 1e-6
@@ -396,7 +396,7 @@ end
     @testset "no convergence is an error" begin
         # The front end gives the whole number of an option as 1, so the method has one iteration only.
         H = MX.sym("H", 4, 4)
-        f = CasADiCodegen.Function("convex", [H], [C.convexify(H, Dict("strategy" => "eigen-clip", "max_iter_eig" => 1))])
+        f = CasADiNative.Function("convex", [H], [C.convexify(H, Dict("strategy" => "eigen-clip", "max_iter_eig" => 1))])
         @test_throws Exception f(C.DM(reshape(dense(4, 0.0), 4, 4)))
         @test_throws "the eigenvalues of a block did not converge in 1 iterations" evaluated(native(f), f, [dense(4, 0.0)])
     end

@@ -16,9 +16,9 @@ generate_julia
 The methods of `integrator` and `rootfinder` exist when SciMLBase.jl is loaded, which each SciML solver package does.
 
 ```@docs
-CasADiCodegen.callback(::Any, ::AbstractString, ::Tuple, ::Tuple)
-CasADiCodegen.integrator(::AbstractString, ::SciMLBase.AbstractODEAlgorithm, ::Any, ::Real, ::Real)
-CasADiCodegen.rootfinder(::AbstractString, ::SciMLBase.AbstractNonlinearAlgorithm, ::CasADiCodegen.Function)
+CasADiNative.callback(::Any, ::AbstractString, ::Tuple, ::Tuple)
+CasADiNative.integrator(::AbstractString, ::SciMLBase.AbstractODEAlgorithm, ::Any, ::Real, ::Real)
+CasADiNative.rootfinder(::AbstractString, ::SciMLBase.AbstractNonlinearAlgorithm, ::CasADiNative.Function)
 ```
 
 ## Solvers of CasADi
@@ -26,24 +26,24 @@ CasADiCodegen.rootfinder(::AbstractString, ::SciMLBase.AbstractNonlinearAlgorith
 ```@docs
 CasADiCodegen.Solvers
 CasADiCodegen.Solver
-SciMLBase.ODEProblem(::CasADiCodegen.Function, ::AbstractVector{<:Real}, ::AbstractVector{<:Real})
-SciMLBase.NonlinearProblem(::CasADiCodegen.Function, ::AbstractVector{<:Real}, ::AbstractVector{<:Real}...)
-SciMLBase.OptimizationProblem(::CasADiCodegen.Function, ::AbstractVector{<:Real}, ::AbstractVector{<:Real})
+SciMLBase.ODEProblem(::CasADiNative.Function, ::AbstractVector{<:Real}, ::AbstractVector{<:Real})
+SciMLBase.NonlinearProblem(::CasADiNative.Function, ::AbstractVector{<:Real}, ::AbstractVector{<:Real}...)
+SciMLBase.OptimizationProblem(::CasADiNative.Function, ::AbstractVector{<:Real}, ::AbstractVector{<:Real})
 ```
 
 ## Functions of SciML problems
 
 ```@docs
-SciMLBase.ODEFunction(::CasADiCodegen.Function)
-SciMLBase.NonlinearFunction(::CasADiCodegen.Function)
-SciMLBase.OptimizationFunction(::CasADiCodegen.Function, ::Union{Nothing,CasADiCodegen.Function})
+SciMLBase.ODEFunction(::CasADiNative.Function)
+SciMLBase.NonlinearFunction(::CasADiNative.Function)
+SciMLBase.OptimizationFunction(::CasADiNative.Function, ::Union{Nothing,CasADiNative.Function})
 ```
 
 ## Automatic differentiation rules and sparse matrices
 
 ```@docs
 CasADiCodegen.differentiable
-SparseArrays.SparseMatrixCSC(::CasADiCodegen.Sparsity)
+SparseArrays.SparseMatrixCSC(::CasADiNative.Sparsity)
 ```
 
 ## Inspection

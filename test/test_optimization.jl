@@ -24,7 +24,7 @@ solved(solver; arguments...) = solver(Dict{String,Any}(String(key) => value for 
     solver = C.nlpsol("nearest", "ipopt", Dict("x" => v, "p" => w, "f" => C.sumsqr(v - w), "g" => v[1] + v[2]))
     q, c = MX.sym("q", 2), MX.sym("c")
     r = solved(solver; x0 = MX(C.DM([0.0, 0.0])), p = q, lbg = c, ubg = c)
-    f = CasADiCodegen.Function("f", [q, c], [r["x"], r["f"], r["g"], r["lam_x"], r["lam_g"], r["lam_p"],
+    f = CasADiNative.Function("f", [q, c], [r["x"], r["f"], r["g"], r["lam_x"], r["lam_g"], r["lam_p"],
                                       C.jacobian(r["x"], q), C.jacobian(r["x"], c), C.jacobian(r["f"], q), C.jacobian(r["lam_g"], c)])
     @test_throws "CasADiCodegen.Solvers(optimization = ...)" K.algorithm(f; expand = false)
     g = native(f; solvers = SOLVERS)
@@ -54,7 +54,7 @@ solved(solver; arguments...) = solver(Dict{String,Any}(String(key) => value for 
     end
     @testset "a solver that fails" begin
         # The solution alone keeps the compilation short.
-        solution = CasADiCodegen.Function("f", [q, c], [r["x"]])
+        solution = CasADiNative.Function("f", [q, c], [r["x"]])
         short = native(solution; solvers = Solvers(optimization = ipopt("max_iter" => 0)))
         @test_throws "solver \"nearest\": the solver stopped with the return code" evaluated(short, solution, values)
     end
@@ -67,7 +67,7 @@ end
     solver = C.nlpsol("bounded", "ipopt", Dict("x" => v, "p" => w, "f" => C.sumsqr(v - w), "g" => v[1] + v[2]))
     q, u = MX.sym("q", 2), MX.sym("u")
     r = solved(solver; x0 = MX(C.DM([0.0, 0.0])), p = q, ubx = C.vertcat(MX[u, MX(Inf)]), ubg = MX(100.0))
-    f = CasADiCodegen.Function("f", [q, u], [r["x"], r["lam_x"], r["lam_g"], C.jacobian(r["x"], q), C.jacobian(r["x"], u)])
+    f = CasADiNative.Function("f", [q, u], [r["x"], r["lam_x"], r["lam_g"], C.jacobian(r["x"], q), C.jacobian(r["x"], u)])
     x, lam_x, lam_g, by_q, by_u = evaluated(native(f; solvers = SOLVERS), f, [[0.7, -0.2], [0.3]])
     @test x ≈ [0.3, -0.2] rtol = 1e-7
     @test lam_x[1] ≈ 0.8 rtol = 1e-6
@@ -105,7 +105,7 @@ end
     solver = C.nlpsol("cube", "ipopt", Dict("x" => v, "p" => w, "f" => v^4 / 4 - w * v))
     q = MX.sym("q")
     x = solved(solver; x0 = MX(1.0), p = q)["x"]
-    f = CasADiCodegen.Function("f", [q], [x, C.jacobian(x, q), C.jacobian(C.jacobian(x, q), q)])
+    f = CasADiNative.Function("f", [q], [x, C.jacobian(x, q), C.jacobian(C.jacobian(x, q), q)])
     root, slope, curve = evaluated(native(f; solvers = SOLVERS), f, [[2.0]])
     @test root ≈ [cbrt(2.0)] rtol = 1e-9
     @test slope ≈ [2.0^(-2 / 3) / 3] rtol = 1e-7
@@ -116,7 +116,7 @@ end
     v = MX.sym("v", 2)
     solver = C.nlpsol("plain", "ipopt", Dict("x" => v, "f" => C.sumsqr(v - C.DM([3.0, -1.0]))))
     a = MX.sym("a")
-    f = CasADiCodegen.Function("f", [a], [a * solved(solver; x0 = MX(C.DM([0.0, 0.0])))["x"]])
+    f = CasADiNative.Function("f", [a], [a * solved(solver; x0 = MX(C.DM([0.0, 0.0])))["x"]])
     solvers = Solvers(overrides = (Solver(solver, ipopt()),))
     @test evaluated(native(f; solvers), f, [[2.0]])[1] ≈ [6.0, -2.0] rtol = 1e-8
 end
@@ -130,7 +130,7 @@ end
     d, q, c, u = MX.sym("d", C.Sparsity.diag(2)), MX.sym("q", 2), MX.sym("c"), MX.sym("u")
     # The upper bound `u` of the first unknown is active for the values below.
     r = solved(solver; h = d, g = q, a = MX(C.DM([1.0 1.0])), lba = c, uba = c, ubx = C.vertcat(MX[u, MX(Inf)]))
-    f = CasADiCodegen.Function("f", [d, q, c, u], [r["x"], r["cost"], r["lam_a"], r["lam_x"]])
+    f = CasADiNative.Function("f", [d, q, c, u], [r["x"], r["cost"], r["lam_a"], r["lam_x"]])
     @test_throws "CasADiCodegen.Solvers(optimization = ...)" K.algorithm(f; expand = false)
     values = [[2.0, 4.0], [-1.4, 0.4], [2.0], [0.5]]
     expected = [vec(Array(C.DM(v))) for v in f(C.DM([2.0 0.0; 0.0 4.0]), map(C.DM, values[2:4])...)]

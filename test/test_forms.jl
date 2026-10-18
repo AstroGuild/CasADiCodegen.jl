@@ -59,7 +59,7 @@ const FORM_CASES = ((SX, (;)), (SX, (; chunk_size = 3)), (MX, (; expand = false)
 function forms_function(T)
     L, v = T.sym("L", C.Sparsity.lower(3)), T.sym("v", 2)
     y = C.vertcat([L[1, 1] * v[1] + L[3, 2], sin(v[2])])
-    CasADiCodegen.Function("f", [L, v], [y, 2 * L + L * v[1], C.transpose(L), C.mtimes(v, C.transpose(v))])
+    CasADiNative.Function("f", [L, v], [y, 2 * L + L * v[1], C.transpose(L), C.mtimes(v, C.transpose(v))])
 end
 
 @testset "output forms: values of CasADi" begin
@@ -86,7 +86,7 @@ end
 
     # One output: the array itself. A number serves as an input with one element.
     a = SX.sym("a")
-    one_output = CasADiCodegen.Function("h", [a], [C.vertcat([a^2, 3 * a])])
+    one_output = CasADiNative.Function("h", [a], [C.vertcat([a^2, 3 * a])])
     h, _ = build_function(one_output; expression = Val{false}, force_SA = true)
     @test h(2.0) === SVector(4.0, 6.0)
     h, h! = build_function(one_output; expression = Val{false})
@@ -95,13 +95,13 @@ end
     @test h!((zeros(2),), ([2.0],))[1] == [4.0, 6.0]
 
     # An output without structural nonzeros is a zero array, in each form.
-    empty_output = CasADiCodegen.Function("e", [a], [C.vertcat([a, a]), SX(2, 3)])
+    empty_output = CasADiNative.Function("e", [a], [C.vertcat([a, a]), SX(2, 3)])
     for kwargs in ((;), (; chunk_size = 1)), (label, r) in forms_results(empty_output, [[1.5]]; kwargs...)
         @test r[1] == [1.5, 1.5] && r[2] == zeros(2, 3)
     end
 
     # A function without inputs has no argument to choose static arrays by.
-    constant = CasADiCodegen.Function("k", SX[], [SX([1.0, 2.0])])
+    constant = CasADiNative.Function("k", SX[], [SX([1.0, 2.0])])
     k, _ = build_function(constant; expression = Val{false})
     @test k() == [1.0, 2.0]
     k, _ = build_function(constant; expression = Val{false}, force_SA = true)
@@ -125,7 +125,7 @@ end
 
 @testset "output forms: number types" begin
     a = SX.sym("a", 2)
-    f = CasADiCodegen.Function("h", [a], [C.vertcat([a[1] * a[2], sin(a[1]), 2])])
+    f = CasADiNative.Function("h", [a], [C.vertcat([a[1] * a[2], sin(a[1]), 2])])
     g, _ = build_function(f; expression = Val{false})
     expected = [-1.7 0.3; cos(0.3) 0.0; 0.0 0.0]
     @test ForwardDiff.jacobian(v -> g(SVector{2}(v)), [0.3, -1.7]) == expected
@@ -172,7 +172,7 @@ function masked_function(T, mask)
     X, v = T.sym("X", C.Sparsity.triplet(3, 3, rows, cols)), T.sym("v", 3)
     # The second output is full, because X + 1 is not zero at a structural zero. Each operation is
     # rounded correctly, so that a sum that cancels cannot enlarge a difference between two libraries.
-    CasADiCodegen.Function("f", [X, v], [C.mtimes(X, v), X * 3 + (X + 1) * v[2], C.transpose(X)])
+    CasADiNative.Function("f", [X, v], [C.mtimes(X, v), X * 3 + (X + 1) * v[2], C.transpose(X)])
 end
 
 "The arrays of `expected` with a sparse matrix at each sparse pattern, and the same for the inputs."
@@ -224,7 +224,7 @@ end
     Base.invokelatest((o, a) -> src.Gen.f!(o, a), out, x)
     @test all(all(close_enough.(Array(a), e)) for (a, e) in zip(out, forms_expected(f, nz)))
     a = SX.sym("a", 2)
-    dense = sprint(io -> generate_julia(CasADiCodegen.Function("d", [a], [a * 2, C.mtimes(sin(a), C.transpose(a))]), io))
+    dense = sprint(io -> generate_julia(CasADiNative.Function("d", [a], [a * 2, C.mtimes(sin(a), C.transpose(a))]), io))
     @test !occursin("SparseArrays", dense) && !occursin("stored", dense)
 end
 
@@ -278,7 +278,7 @@ end
 
     # Other number types: dual numbers, and a type that is not stored inline.
     a = SX.sym("a", 2)
-    h = CasADiCodegen.Function("h", [a], [C.vertcat([a[1] * a[2], sin(a[1]), 2])])
+    h = CasADiNative.Function("h", [a], [C.vertcat([a[1] * a[2], sin(a[1]), 2])])
     s, _ = build_function(h; expression = Val{false}, chunk_size = 2)
     @test ForwardDiff.jacobian(v -> s(SVector{2}(v)), [0.3, -1.7]) == [-1.7 0.3; cos(0.3) 0.0; 0.0 0.0]
     b, _ = build_function(h; expression = Val{false}, chunk_size = 2, nanmath = false)
@@ -295,9 +295,9 @@ end
 @testset "matrix code allocates no memory in place and with static arrays" begin
     # A matrix function that calls a scalar function, with patterns that have structural zeros.
     a = SX.sym("a", 2)
-    inner = CasADiCodegen.Function("inner", [a], [C.vertcat([a[1] * a[2], sin(a[1])])])
+    inner = CasADiNative.Function("inner", [a], [C.vertcat([a[1] * a[2], sin(a[1])])])
     L, v = MX.sym("L", C.Sparsity.lower(3)), MX.sym("v", 2)
-    f = CasADiCodegen.Function("f", [L, v], [inner(v) + L[1, 1], 2 * L + L * v[1], C.mtimes(v, C.transpose(inner(v)))])
+    f = CasADiNative.Function("f", [L, v], [inner(v) + L[1, 1], 2 * L + L * v[1], C.mtimes(v, C.transpose(inner(v)))])
     nz = mx_inputs(f)
     expected = forms_expected(f, nz)
     x = forms_inputs(f, nz)
