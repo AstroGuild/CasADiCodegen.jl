@@ -32,10 +32,10 @@ emits Julia functions that run without CasADi.
 
 ## Install
 
-The package supports Julia 1.12 and 1.13. It is registered in the private registry
-`EllissoideRotondo/Registry.jl`:
+The package supports Julia 1.12 and 1.13. Install CasADiNative.jl and the package from
+GitHub:
 
 ```julia-repl
-pkg> registry add https://github.com/EllissoideRotondo/Registry.jl
-pkg> add CasADiCodegen
+pkg> add https://github.com/casadi/CasADiNative.jl
+pkg> add https://github.com/EllissoideRotondo/CasADiCodegen.jl
 ```
