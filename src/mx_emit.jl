@@ -1,0 +1,575 @@
+# Julia code for a matrix algorithm. As in the CasADi virtual machine, every
+# value lives in one work vector `w`, and each instruction becomes a few loops
+# over its nonzeros. A called function is emitted once, with the signature
+# `(w)`: it has a part of the work vector of its own, its frame, which starts
+# with the nonzeros of its inputs and of its outputs. A function takes the
+# work vector only, because a call between runtime generated functions can
+# allocate memory for a tuple of arrays.
+
+"""
+    Emission
+
+State that one call of the emitter collects.
+
+- `definitions`: `name => statements` of each function `name(w)`, each after
+  the functions that it calls.
+- `constants`, `indices`: the values of the constant table and of the index
+  table. The statements name them `constants_name` and `indices_name`.
+- `callees`, `julia`, `free`: see the comments on the fields.
+"""
+struct Emission
+    prefix::String
+    chunk_size::Split
+    ref::Any
+    definitions::Vector{Pair{Symbol,Vector{Any}}}
+    constants::Vector{Float64}
+    constants_name::Symbol
+    indices::Vector{Int}
+    indices_name::Symbol
+    callees::IdDict{Any,Tuple{Symbol,Vector{Int},Vector{Int}}}   # algorithm => (function name, offsets of inputs, of outputs)
+    julia::Vector{Pair{Symbol,Any}}              # name in the statements => Julia function
+    free::Base.RefValue{Int}                     # length of the work vector that the frames use so far
+end
+
+function Emission(name::Symbol, chunk_size::ChunkSize, ref)
+    @requires Base.isidentifier(name) "\"$name\" is not a valid function name"
+    Emission(String(chopsuffix(String(name), "!")), chunk_size isa Split ? chunk_size : Split(chunk_size, nothing), ref, Pair{Symbol,Vector{Any}}[],
+             Float64[], Symbol(name, :_constants), Int[], Symbol(name, :_indices),
+             IdDict{Any,Tuple{Symbol,Vector{Int},Vector{Int}}}(), Pair{Symbol,Any}[], Ref(0))
+end
+
+element(offset::Integer, i::Integer) = :(w[$(offset + i)])
+element(offset::Integer, i) = offset == 0 ? :(w[$i]) : :(w[$offset + $i])
+
+loop(n::Integer, statement) = n == 0 ? Any[] : n == 1 ? Any[statement(1)] :
+    Any[Expr(:for, :(i = 1:$n), Expr(:block, statement(:i)))]
+
+stride(first::Integer, step::Integer, i::Integer) = first + step * (i - 1)
+stride(first::Integer, step::Integer, i) =
+    step == 1 ? (first == 1 ? i : :($(first - 1) + $i)) : :($(first - step) + $step * $i)
+
+"""
+    runs(source, keep) -> Vector{NTuple{4,Int}}
+
+Split the positions `k` with `keep[k]` into runs `(k, first, step, length)`:
+positions `k:k+length-1` over which `source` advances from `first` by the fixed
+`step`. The runs cover each kept position once, in rising order.
+"""
+function runs(source::AbstractVector{<:Integer}, keep)
+    found = NTuple{4,Int}[]
+    k, n = 1, length(source)
+    while k <= n
+        # Loop invariant: `found` covers exactly the kept positions below k.
+        if !keep[k]
+            k += 1
+            continue
+        end
+        len, step = 1, 1
+        if k < n && keep[k+1]
+            step = source[k+1] - source[k]
+            len = 2
+            while k + len <= n && keep[k+len] && source[k+len] - source[k+len-1] == step
+                len += 1
+            end
+        end
+        push!(found, (k, source[k], step, len))
+        k += len
+    end
+    @ensures sum(r -> r[4], found; init = 0) == count(keep) "runs must cover every kept position once"
+    found
+end
+
+"""
+    indexed(em, tuples, statement) -> Vector{Any}
+
+Return statements that run `statement(indices...)` for each tuple of indices.
+Up to 8 tuples are written out one by one. More become one loop over the
+variable `t` that reads the index table of `em`.
+"""
+function indexed(em::Emission, tuples::Vector{NTuple{N,Int}}, statement) where {N}
+    length(tuples) <= 8 && return Any[statement(t...) for t in tuples]
+    base = length(em.indices)
+    foreach(t -> append!(em.indices, t), tuples)
+    entry(j) = :($(em.indices_name)[$(base - N + j) + $N * t])
+    Any[Expr(:for, :(t = 1:$(length(tuples))), Expr(:block, statement(ntuple(entry, N)...)))]
+end
+
+"""
+    copy_statements(maps, operand_offsets, result_offset) -> Vector{Any}
+
+Return the statements of a copy operation for one result, which starts after
+`w[result_offset]`. `maps[d]` is the map of the operand that starts after
+`w[operand_offsets[d]]`. An operand at the offset of the result stays in place.
+"""
+function copy_statements(maps, operand_offsets, result_offset)
+    n = length(first(maps))
+    statements = Any[]
+    fed = [any(m -> m[k] != 0, maps) for k in 1:n]
+    for (k, _, _, len) in runs(1:n, .!fed)
+        append!(statements, loop(len, i -> :($(element(result_offset + k - 1, i)) = zero(eltype(w)))))
+    end
+    seen = falses(n)
+    order = sortperm([offset != result_offset for offset in operand_offsets])    # in place first
+    for d in order
+        from = maps[d]
+        if operand_offsets[d] != result_offset
+            for first_use in (true, false)
+                keep = [from[k] != 0 && seen[k] != first_use for k in 1:n]
+                for (k, source, step, len) in runs(from, keep)
+                    target(i) = element(result_offset + k - 1, i)
+                    value(i) = :(w[$(stride(operand_offsets[d] + source, step, i))])
+                    append!(statements, loop(len, i -> first_use ? :($(target(i)) = $(value(i))) :
+                                                                   :($(target(i)) += $(value(i)))))
+                end
+            end
+        end
+        seen .|= from .!= 0
+    end
+    statements
+end
+
+function instruction_statements(em::Emission, alg::MXAlgorithm, ins::MXInstruction, offsets, scratch, offset_in, offset_out)
+    op = ins.op
+    nnz(s) = alg.slot_nnz[s]
+    if op === :OP_INPUT
+        slot, (argument, offset) = ins.out[1], ins.data
+        loop(nnz(slot), i -> :($(element(offsets[slot], i)) = $(element(offset_in[argument] + offset, i))))
+    elseif op === :OP_OUTPUT
+        slot, (result, offset) = ins.in[1], ins.data
+        loop(nnz(slot), i -> :($(element(offset_out[result] + offset, i)) = $(element(offsets[slot], i))))
+    elseif op === :OP_CONST
+        slot, values = ins.out[1], ins.data
+        if isempty(values) || all(isequal(first(values)), values)
+            loop(nnz(slot), i -> :($(element(offsets[slot], i)) = $(first(values))))
+        else
+            base = length(em.constants)
+            append!(em.constants, values)
+            loop(nnz(slot), i -> :($(element(offsets[slot], i)) = $(em.constants_name)[$(stride(base + 1, 1, i))]))
+        end
+    elseif op === :OP_CALL && ins.data isa JuliaCall
+        julia_call_statements(em, ins, offsets)
+    elseif op === :OP_CALL
+        # Copy the arguments to the frame of the function, call it, and copy the results that are read.
+        name, callee_in, callee_out = callee!(em, ins.data)
+        statements = Any[]
+        for (d, slot) in enumerate(ins.in)
+            append!(statements, loop(ins.data.nnz_in[d], i -> :($(element(callee_in[d], i)) = $(element(offsets[slot], i)))))
+        end
+        push!(statements, :($name(w)))
+        for (o, slot) in enumerate(ins.out)
+            slot == 0 || append!(statements, loop(ins.data.nnz_out[o], i -> :($(element(offsets[slot], i)) = $(element(callee_out[o], i)))))
+        end
+        statements
+    elseif op in COPY_OPERATIONS
+        statements = Any[]
+        for (o, slot) in enumerate(ins.out)
+            slot == 0 || append!(statements, copy_statements(ins.data[o], offsets[ins.in], offsets[slot]))
+        end
+        statements
+    elseif haskey(LINEAR_OPERATIONS, op)
+        linear_statements(em, ins, offsets[ins.out[1]], offsets[ins.in], alg.slot_nnz[ins.in], scratch)
+    elseif haskey(INDEX_OPERATIONS, op)
+        index_statements(em, ins, offsets[ins.out[1]], offsets[ins.in], alg.slot_nnz[ins.in])
+    elseif haskey(PASS_OPERATIONS, op)
+        pass_statements(em, ins, offsets[ins.out[1]], offsets[ins.in], nnz(ins.out[1]))
+    elseif haskey(TABLE_OPERATIONS, op)
+        table_statements(em, ins, offsets[ins.out[1]], offsets[ins.in], alg.slot_nnz[ins.in], nnz(ins.out[1]), scratch)
+    else
+        slot = ins.out[1]
+        n = nnz(slot)
+        operand(s, i) = element(offsets[s], nnz(s) == n ? i : 1)
+        loop(n, i -> :($(element(offsets[slot], i)) = $(OPERATIONS[op].build(em.ref, (operand(s, i) for s in ins.in)...))))
+    end
+end
+
+"""
+    julia_call_statements(em, ins, offsets) -> Vector{Any}
+
+Return statements that call a Julia function directly and copy each result
+that is read to its work slot. The function gets views of the work vector, as
+vectors or as matrices. It returns only the results that have nonzeros. A
+result of the wrong length throws `DimensionMismatch`.
+"""
+function julia_call_statements(em::Emission, ins::MXInstruction, offsets)
+    call = ins.data
+    name = Symbol(em.prefix, :_julia_, length(em.julia) + 1)
+    known = findfirst(entry -> entry[2] === call.f, em.julia)
+    known === nothing ? push!(em.julia, name => call.f) : (name = em.julia[known][1])
+    part(start, n) = :(view(w, $(start + 1):$(start + n)))
+    arguments = map(1:call.nargs) do d
+        dims = call.shapes_in[d]
+        values = part(offsets[ins.in[d]], call.nnz_in[d])
+        length(dims) == 1 ? values : :(reshape($values, $(dims[1]), $(dims[2])))
+    end
+    copies = Any[]
+    returned = cumsum(call.nnz_out .> 0)     # the function does not return a structural zero
+    for (o, slot) in enumerate(ins.out)
+        n = call.nnz_out[o]
+        (slot == 0 || n == 0) && continue
+        value = returned[end] == 1 ? :(y isa Tuple ? y[1] : y) : :(y[$(returned[o])])
+        push!(copies, :(length($value) == $n || throw(DimensionMismatch(
+            string($("Julia function \"$(call.name)\": result $o needs $n elements, got "), length($value))))))
+        push!(copies, :(copyto!($(part(offsets[slot], n)), $value)))
+    end
+    # The call is not a part of the code that runs without bounds checks.
+    Any[Expr(:let, :(y = $(em.ref(:Helpers, :checked))($name, $(arguments...))), Expr(:block, copies...))]
+end
+
+"""
+    linear_statements(em, ins, out, at, sizes, scratch) -> Vector{Any}
+
+Return the statements of a linear algebra operation. The result starts after
+`w[out]`, and operand `d` has `sizes[d]` nonzeros after `w[at[d]]`. Operations
+that factorize a matrix use the work space after `w[scratch]`.
+
+The sums run in the order of the CasADi runtime, so they are rounded in the
+same way. Determinant, inverse and solve use the LU factorization of
+LinearAlgebra, where CasADi uses a QR factorization. A solve with a large
+sparse matrix uses the sparse QR factorization of CasADi (see `qr_tables`).
+"""
+function linear_statements(em::Emission, ins::MXInstruction, out, at, sizes, scratch)
+    op, data = ins.op, ins.data
+    build(name, arguments...) = OPERATIONS[name].build(em.ref, arguments...)
+    result = element(out, 1)
+    # An accumulator that is not the result slot is copied to it first.
+    keep() = at[1] == out ? Any[] : loop(sizes[1], i -> :($(element(out, i)) = $(element(at[1], i))))
+    fold(start, update) = Any[:($result = $start), loop(sizes[1], i -> :($result = $(update(i))))...]
+    nested(ranges, statement) = Any[Expr(:for, Expr(:block, ranges...), Expr(:block, statement))]
+    library(name) = em.ref(:LinearAlgebra, name)
+    if op === :OP_MTIMES
+        product(kz, kx, ky) = :($(element(out, kz)) += $(element(at[2], kx)) * $(element(at[3], ky)))
+        data.dims === nothing && return Any[keep()..., indexed(em, data.terms, product)...]
+        nr, nk, nc = data.dims
+        Any[keep()..., nested((:(j = 1:$nc), :(k = 1:$nk), :(i = 1:$nr)),
+                              product(:(i + $nr * (j - 1)), :(i + $nr * (k - 1)), :(k + $nk * (j - 1))))...]
+    elseif op === :OP_DOT
+        fold(:(zero(eltype(w))), i -> :($result + $(element(at[1], i)) * $(element(at[2], i))))
+    elseif op === :OP_NORMF
+        Any[fold(:(zero(eltype(w))), i -> :($result + $(element(at[1], i)) * $(element(at[1], i))))...,
+            :($result = $(build(:OP_SQRT, result)))]
+    elseif op === :OP_NORM1
+        fold(:(zero(eltype(w))), i -> :($result + $(build(:OP_FABS, element(at[1], i)))))
+    elseif op === :OP_NORMINF
+        fold(:(zero(eltype(w))), i -> build(:OP_FMAX, result, build(:OP_FABS, element(at[1], i))))
+    elseif op === :OP_MMIN
+        fold(data.dense ? Inf : 0.0, i -> build(:OP_FMIN, result, element(at[1], i)))
+    elseif op === :OP_MMAX
+        fold(data.dense ? -Inf : 0.0, i -> build(:OP_FMAX, result, element(at[1], i)))
+    elseif op === :OP_KRON
+        indexed(em, data.terms, (kz, kx, ky) -> :($(element(out, kz)) = $(element(at[1], kx)) * $(element(at[2], ky))))
+    elseif op === :OP_LOGSUMEXP
+        # As the CasADi routine `casadi_logsumexp`: the largest element is taken out of the sum.
+        n = sizes[1]
+        largest = Expr(:for, :(i = 2:$n), :(if $(element(at[1], :i)) > m
+                                               m, first = $(element(at[1], :i)), i
+                                           end))
+        others = Expr(:for, :(i = 1:$n), :(i == first || (r += $(build(:OP_EXP, :($(element(at[1], :i)) - m))))))
+        Any[Expr(:let, Expr(:block, :(m = $(element(at[1], 1))), :(first = 1), :(r = zero(eltype(w)))),
+                 Expr(:block, largest, others, :($result = $(build(:OP_LOG1P, :r)) + m)))]
+    elseif op in (:OP_BILIN, :OP_RANK1)
+        term(el, r, c) = op === :OP_BILIN ?
+            :($result += $(element(at[2], r)) * $(element(at[1], el)) * $(element(at[3], c))) :
+            :($(element(out, el)) += $(element(at[2], 1)) * $(element(at[3], r)) * $(element(at[4], c)))
+        start = op === :OP_BILIN ? Any[:($result = zero(eltype(w)))] : keep()
+        data.dims === nothing &&
+            return Any[start..., indexed(em, collect(zip(eachindex(data.rows), data.rows, data.columns)), term)...]
+        nr, nc = data.dims
+        Any[start..., nested((:(c = 1:$nc), :(r = 1:$nr)), term(:(r + $nr * (c - 1)), :r, :c))...]
+    elseif op === :OP_SOLVE && data.qr !== nothing
+        base = length(em.indices)
+        append!(em.indices, data.qr)
+        helper(name) = em.ref(:Helpers, name)
+        Any[:($(helper(Symbol("qr_factor!")))(w, $(em.indices_name), $base, $(at[2]), $scratch)), keep()...,
+            :($(helper(Symbol("qr_solve!")))(w, $(em.indices_name), $base, $scratch, $out, $(data.nrhs), $(data.tr)))]
+    else
+        n = data.n
+        matrix(first, columns) = :(reshape(view(w, $(first + 1):$(first + n * columns)), $n, $columns))
+        dense = copy_statements([data.place], [at[op === :OP_SOLVE ? 2 : 1]], scratch)
+        factors = :($(library(:lu!))($(matrix(scratch, n)); check = false))
+        if op === :OP_DETERMINANT
+            Any[dense..., :($result = $(library(:det))($factors))]
+        elseif op === :OP_INVERSE
+            Any[dense..., loop(n * n, i -> :($(element(out, i)) = zero(eltype(w))))...,
+                loop(n, i -> :(w[$(stride(out + 1, n + 1, i))] = one(eltype(w))))...,
+                :($(library(:ldiv!))($factors, $(matrix(out, n))))]
+        else
+            factors = data.tr ? :($(library(:transpose))($factors)) : factors
+            Any[dense..., keep()..., :($(library(:ldiv!))($factors, $(matrix(out, data.nrhs))))]
+        end
+    end
+end
+
+"""
+    index_statements(em, ins, out, at, sizes) -> Vector{Any}
+
+Return the statements of an operation of `INDEX_OPERATIONS`, with the arguments
+of `linear_statements`. They follow `index_model`: an index out of range reads
+NaN and writes nothing.
+"""
+function index_statements(em::Emission, ins::MXInstruction, out, at, sizes)
+    op, data = ins.op, ins.data
+    helper(name) = em.ref(:Helpers, name)
+    op === :OP_LOW &&
+        return loop(sizes[2], i -> :($(element(out, i)) = $(helper(:low))(w, $(at[1]), $(sizes[1]), $(element(at[2], i)), $(data.mode))))
+    reads = op === :OP_GETNONZEROS_PARAM
+    keys = at[(reads ? 2 : 3):end]
+    two = !isempty(data.second)
+    function index(offset, a, b)
+        sum = :($(helper(:whole))($(element(keys[1], a))))
+        two && (sum = :($sum + $(helper(:whole))($(element(keys[2], b)))))
+        offset isa Integer && offset == 0 ? sum : :($offset + $sum)
+    end
+    tuples = [(e, data.offsets[e], data.first[e], two ? data.second[e] : 0) for e in eachindex(data.offsets)]
+    reads && return indexed(em, tuples, (e, offset, a, b) ->
+        :($(element(out, e)) = $(helper(:gather))(w, $(at[1]), $(sizes[1]), $(index(offset, a, b)))))
+    copied = at[1] == out ? Any[] : loop(sizes[1], i -> :($(element(out, i)) = $(element(at[1], i))))
+    update = op === :OP_SETNONZEROS_PARAM ? :(=) : :(+=)
+    Any[copied..., indexed(em, tuples, (e, offset, a, b) ->
+        Expr(:let, :(index = $(index(offset, a, b))),
+             :(if 0 <= index < $(sizes[1])
+                   $(Expr(update, :(w[$(out + 1) + index]), element(at[2], e)))
+               end)))...]
+end
+
+"""
+    pass_statements(em, ins, out, at, n) -> Vector{Any}
+
+Return the statements of an operation of `PASS_OPERATIONS`: the action on the
+`n` nonzeros after `w[at[1]]`, then their copy to the result after `w[out]`.
+"""
+function pass_statements(em::Emission, ins::MXInstruction, out, at, n)
+    op, data = ins.op, ins.data
+    helper(name) = em.ref(:Helpers, name)
+    values = :(view(w, $(at[1] + 1):$(at[1] + n)))
+    action = op === :OP_MONITOR ? Any[:($(helper(:monitor))($data, $values))] :
+             op === :OP_ASSERTION ? Any[:($(helper(:assertion))($(element(at[2], 1)), $data))] :
+             op === :OP_DUMP ? Any[:($(helper(:write_matrix))($(data.base), $(data.dims[1]), $(data.dims[2]), $(Tuple(data.rows)), $(Tuple(data.columns)), $values))] : Any[]
+    copied = at[1] == out ? Any[] : loop(n, i -> :($(element(out, i)) = $(element(at[1], i))))
+    Any[action..., copied...]
+end
+
+"""
+    table_statements(em, ins, out, at, sizes, n, scratch) -> Vector{Any}
+
+Return the statements of an operation of `TABLE_OPERATIONS`, with the arguments
+of `linear_statements`; the result has `n` nonzeros. The knots and the fixed
+coefficients of a B-spline go to the constant table. The integers of each
+operation go to the index table.
+"""
+function table_statements(em::Emission, ins::MXInstruction, out, at, sizes, n, scratch)
+    op, data = ins.op, ins.data
+    helper(name) = em.ref(:Helpers, name)
+    if op === :OP_BSPLINE
+        knots, table = length(em.constants), length(em.indices)
+        append!(em.constants, data.knots)
+        append!(em.indices, bspline_table(data))
+        fixed = data.coefficients !== nothing
+        coefficients = fixed ? length(em.constants) : at[2]
+        fixed && append!(em.constants, data.coefficients)
+        Any[:($(helper(Symbol("bspline!")))(w, $(em.constants_name), $knots, $(em.indices_name), $table,
+                                           $(fixed ? em.constants_name : :w), $coefficients, $(at[1]), $out, $scratch))]
+    elseif op === :OP_EINSTEIN
+        copied = at[1] == out ? Any[] : loop(sizes[1], i -> :($(element(out, i)) = $(element(at[1], i))))
+        Any[copied..., indexed(em, data.terms, (kz, kx, ky) -> :($(element(out, kz)) += $(element(at[2], kx)) * $(element(at[3], ky))))...]
+    elseif op === :OP_KRON_CONTRACT
+        ma, na, mb, nb = data.dims
+        data.inner ? Any[:($(helper(Symbol("kron_inner!")))(w, $(at[1]), $ma, $na, $(at[2]), $mb, $nb, $out))] :
+                     Any[:($(helper(Symbol("kron_outer!")))(w, $(at[1]), $mb, $nb, $(at[2]), $ma, $na, $out))]
+    elseif op === :OP_CONVEXIFY
+        base = length(em.indices)
+        append!(em.indices, data.table)
+        Any[:($(helper(Symbol("convexify!")))(w, $(em.indices_name), $base, $(data.margin), $(at[1]), $out, $scratch))]
+    elseif op === :OP_HORZREPSUM
+        # As CasADi: the result is cleared, and the blocks are added one after the other.
+        Any[loop(n, i -> :($(element(out, i)) = zero(eltype(w))))...,
+            Expr(:for, Expr(:block, :(r = 0:$(data.n - 1)), :(i = 1:$n)), :(w[$out + i] += w[$(at[1]) + i + $n * r]))]
+    else
+        base = length(em.indices)
+        append!(em.indices, data.rows)
+        Any[:($(element(out, 1)) = $(helper(:find))(w, $(at[1]), $(sizes[1]), $(em.indices_name), $base, $(data.last)))]
+    end
+end
+
+scratch_size(ins::MXInstruction) = ins.op === :OP_SOLVE && ins.data.qr !== nothing ? ins.data.qr[4] + ins.data.qr[5] + 2 * ins.data.n :
+    ins.op in (:OP_DETERMINANT, :OP_INVERSE, :OP_SOLVE) ? ins.data.n^2 : ins.op === :OP_BSPLINE ? bspline_scratch(ins.data) : ins.op === :OP_CONVEXIFY ? ins.data.scratch : 0
+
+"""
+    frame!(em, alg, own) -> (offset_in, offset_out, start)
+
+Reserve the frame of one function in the work vector: the nonzeros of each
+input, those of each output, and `own` elements after `w[start]`. Nonzero `k`
+of input `i` is `w[offset_in[i] + k]`.
+"""
+function frame!(em::Emission, alg, own::Integer)
+    sizes = [alg.nnz_in; alg.nnz_out]
+    offsets = em.free[] .+ cumsum(sizes) .- sizes
+    start = em.free[] + sum(sizes)
+    em.free[] = start + own
+    offsets[1:length(alg.nnz_in)], offsets[length(alg.nnz_in)+1:end], start
+end
+
+"""
+    callee!(em, alg) -> (name, offset_in, offset_out)
+
+Return the name of the function `name(w)` that runs the called algorithm
+`alg`, and the work vector offsets of its inputs and outputs. The first call
+adds the definition to `em`; later calls with the same algorithm reuse it.
+"""
+function callee!(em::Emission, alg)
+    haskey(em.callees, alg) && return em.callees[alg]
+    taken = Set(first(entry) for entry in values(em.callees))
+    name = Symbol(em.prefix, :_, alg.name, "!")
+    count = 1
+    while name in taken
+        count += 1
+        name = Symbol(em.prefix, :_, alg.name, :_, count, "!")
+    end
+    em.callees[alg] = (name, Int[], Int[])        # reserve the name
+    statements, offset_in, offset_out = body!(em, alg, name)
+    push!(em.definitions, name => statements)
+    em.callees[alg] = (name, offset_in, offset_out)
+end
+
+"""
+    chunked!(em, name, parts) -> Vector{Any}
+
+Return the statements of `parts`, which has one statement list per instruction.
+When they exceed the chunk size, add sub-functions to `em` and return the calls
+to them.
+"""
+function chunked!(em::Emission, name::Symbol, parts)
+    ranges = chunk_ranges(length(parts), chunk_size_for(length(parts), em.chunk_size; limit = DEFAULT_CHUNK_SIZE))
+    length(ranges) <= 1 && return reduce(vcat, parts; init = Any[])
+    map(enumerate(ranges)) do (c, range)
+        push!(em.definitions, chunk_name(name, c) => reduce(vcat, parts[range]; init = Any[]))
+        :($(chunk_name(name, c))(w))
+    end
+end
+
+"""
+    body!(em, alg, name) -> (statements, offset_in, offset_out)
+
+Return statements over `w` that run `alg` in a new frame, and the offsets of
+its inputs and outputs (see `frame!`). Sub-functions are added to `em` under
+names derived from `name`.
+"""
+function body!(em::Emission, alg::Algorithm, name::Symbol)
+    base = em.free[]
+    offset_in, offset_out, total = work_layout(alg)
+    em.free[] += total
+    chunks = split_statements(alg, em.chunk_size, em.ref; base)
+    if isempty(chunks)
+        statements = whole_statements(alg, em.ref; load = (i, k) -> :(w[$(base + offset_in[i] + k)]),
+                                      store = (j, k, value) -> :(w[$(base + offset_out[j] + k)] = $value))
+        return (statements, base .+ offset_in, base .+ offset_out)
+    end
+    for (c, statements) in enumerate(chunks)
+        push!(em.definitions, chunk_name(name, c) => statements)
+    end
+    (Any[:($(chunk_name(name, c))(w)) for c in eachindex(chunks)], base .+ offset_in, base .+ offset_out)
+end
+
+function body!(em::Emission, alg::MXAlgorithm, name::Symbol)
+    own = sum(alg.slot_nnz)
+    # Instructions run one after the other, so they share one work space after the slots.
+    unused = maximum(scratch_size, alg.instructions; init = 0)
+    offset_in, offset_out, start = frame!(em, alg, own + unused)
+    offsets = start .+ cumsum(alg.slot_nnz) .- alg.slot_nnz
+    parts = [instruction_statements(em, alg, ins, offsets, start + own, offset_in, offset_out)
+             for ins in alg.instructions]
+    (chunked!(em, name, parts), offset_in, offset_out)
+end
+
+# A switch copies its arguments to the frame of the function that it selects,
+# runs that function only, and copies the results back.
+function body!(em::Emission, switch::SwitchCall, name::Symbol)
+    offset_in, offset_out, _ = frame!(em, switch, 0)
+    function branch(alg)
+        callee, callee_in, callee_out = callee!(em, alg)
+        statements = Any[]
+        for d in eachindex(callee_in)
+            append!(statements, loop(switch.nnz_in[d+1], i -> :($(element(callee_in[d], i)) = $(element(offset_in[d+1], i)))))
+        end
+        push!(statements, :($callee(w)))
+        for o in eachindex(callee_out)
+            append!(statements, loop(switch.nnz_out[o], i -> :($(element(offset_out[o], i)) = $(element(callee_out[o], i)))))
+        end
+        Expr(:block, statements...)
+    end
+    chain = branch(switch.default)
+    for k in length(switch.cases):-1:1
+        chain = Expr(k == 1 ? :if : :elseif, :(trunc(selector) == $(k - 1)), branch(switch.cases[k]), chain)
+    end
+    (Any[:(selector = $(element(offset_in[1], 1))), chain], offset_in, offset_out)
+end
+
+"""
+    emission(alg::MXAlgorithm, name, chunk_size, ref) -> (em, frame)
+
+Emit the matrix algorithm `alg` with the entry point `name`. `em` holds the
+sub-functions and the tables. `frame` is
+`((offset_in, offset_out, total), statements)`: the layout of the work vector
+and the statements that run the algorithm in it (see `framed_body`).
+"""
+function emission(alg::MXAlgorithm, name::Symbol, chunk_size::ChunkSize, ref)
+    em = Emission(name, chunk_size, ref)
+    statements, offset_in, offset_out = body!(em, alg, name)
+    em, ((offset_in, offset_out, em.free[]), statements)
+end
+
+"""
+    mx_definitions(alg, name, chunk_size, ref; julia = identity) -> (definitions, frame)
+
+Return the named definitions that the matrix algorithm needs, and the frame of
+the entry point (see `emission`). The definitions are the constant table and
+the index table, when not empty, then each called function and sub-function.
+
+`julia(f)` gives what the definitions hold in place of the Julia function `f`
+of a callback: the function itself by default, or an expression that names it.
+"""
+function mx_definitions(alg::MXAlgorithm, name::Symbol, chunk_size::ChunkSize, ref; julia = identity)
+    em, (layout, statements) = emission(alg, name, chunk_size, ref)
+    sites = call_sites(last.(em.julia))
+    functions = Dict{Symbol,Any}(placeholder => julia(sites[f]) for (placeholder, f) in em.julia)
+    first = Any[:($(julia(new_call!))()) for _ in first_statements(sites)]
+    definitions = Expr[]
+    for (table, values) in (em.constants_name => em.constants, em.indices_name => em.indices)
+        isempty(values) || push!(definitions, Expr(:const, :($table = $(Expr(:vect, values...)))))
+    end
+    for (callee, body) in em.definitions
+        push!(definitions, chunk_function(:($callee(w)), Any[substitute(s, functions) for s in body]))
+    end
+    definitions, (layout, Any[first..., (substitute(s, functions) for s in statements)...])
+end
+
+named_frame(alg::MXAlgorithm, name::Symbol, chunk_size::ChunkSize, ref; julia = identity) =
+    mx_definitions(alg, name, chunk_size, ref; julia)[2]
+
+function function_definitions(alg::MXAlgorithm, name::Symbol, chunk_size::ChunkSize, ref; key = identity, julia = identity)
+    definitions, frame = mx_definitions(alg, name, chunk_size, ref; julia)
+    push!(definitions, entry_function(alg, :($name(res, arg)), frame, ref, key(name)))
+end
+
+substitute(ex::Expr, values) = Expr(ex.head, (substitute(a, values) for a in ex.args)...)
+substitute(s::Symbol, values) = get(values, s, s)
+substitute(other, values) = other
+
+"""
+    runtime_frame(alg::MXAlgorithm, chunk_size, ref) -> frame
+
+Return the frame of the entry point for runtime-generated functions. Each
+called function is a runtime-generated function of its own, placed in the
+statements of its callers, as are the constant table and the index table.
+"""
+function runtime_frame(alg::MXAlgorithm, chunk_size::ChunkSize, ref)
+    em, (layout, statements) = emission(alg, :entry, chunk_size, ref)
+    generate(ex) = RuntimeGeneratedFunction(@__MODULE__, @__MODULE__, ex)
+    values = Dict{Symbol,Any}(em.constants_name => em.constants, em.indices_name => em.indices)
+    sites = call_sites(last.(em.julia))
+    merge!(values, Dict(placeholder => sites[f] for (placeholder, f) in em.julia))
+    for (callee, body) in em.definitions
+        ex = chunk_function(:((w,)), Any[substitute(s, values) for s in body])
+        values[callee] = RuntimeGeneratedFunctions.drop_expr(generate(ex))
+    end
+    (layout, Any[first_statements(sites)..., (substitute(s, values) for s in statements)...])
+end

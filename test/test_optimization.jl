@@ -1,0 +1,149 @@
+# A solver of CasADi for optimization problems (`nlpsol`) in the graph of a
+# function, replaced in the generated code by a solver of the SciML ecosystem
+# that the user selects with `CasADiCodegen.Solvers`. The problems have exact
+# solutions, which are the oracles: CasADi in this build cannot run its solvers.
+import ForwardDiff
+import SciMLBase
+import Ipopt
+import OptimizationMOI
+using CasADiCodegen: Solvers, Solver
+const K = CasADiCodegen.Codegen
+
+native(f; kwargs...) = build_function(f; nonzeros = true, expression = Val{false}, expand = false, kwargs...)
+evaluated(g, f, nz) = g([fill(NaN, n) for n in nnz_out(f)], Tuple(nz))
+ipopt(options...) = OptimizationMOI.MOI.OptimizerWithAttributes(Ipopt.Optimizer, "print_level" => 0, "tol" => 1e-12, options...)
+const SOLVERS = Solvers(optimization = ipopt())
+
+"The results of the solver of CasADi `solver` for the given arguments, by name."
+solved(solver; arguments...) = solver(Dict{String,Any}(String(key) => value for (key, value) in arguments))
+
+# The point of the line x1 + x2 = c that is nearest to q: the multiplier of the
+# constraint is s = q1 + q2 - c, and the objective at the solution is s^2 / 2.
+@testset "equality constraint" begin
+    v, w = MX.sym("v", 2), MX.sym("w", 2)
+    solver = C.nlpsol("nearest", "ipopt", Dict("x" => v, "p" => w, "f" => C.sumsqr(v - w), "g" => v[1] + v[2]))
+    q, c = MX.sym("q", 2), MX.sym("c")
+    r = solved(solver; x0 = MX(C.DM([0.0, 0.0])), p = q, lbg = c, ubg = c)
+    f = CasADiCodegen.Function("f", [q, c], [r["x"], r["f"], r["g"], r["lam_x"], r["lam_g"], r["lam_p"],
+                                      C.jacobian(r["x"], q), C.jacobian(r["x"], c), C.jacobian(r["f"], q), C.jacobian(r["lam_g"], c)])
+    @test_throws "CasADiCodegen.Solvers(optimization = ...)" K.algorithm(f; expand = false)
+    g = native(f; solvers = SOLVERS)
+    values = [[0.7, -0.2], [2.0]]
+    s = 0.7 - 0.2 - 2.0
+    x, cost, constraint, lam_x, lam_g, lam_p, by_q, by_c, cost_by_q, lam_by_c = evaluated(g, f, values)
+    @test x ≈ [0.7, -0.2] .- s / 2 rtol = 1e-9
+    @test cost ≈ [s^2 / 2] rtol = 1e-9
+    @test constraint ≈ [2.0] rtol = 1e-9
+    @test lam_x == [0.0, 0.0]
+    @test lam_g ≈ [s] rtol = 1e-8
+    # The multiplier of the parameters is the slope of the best objective by them.
+    @test lam_p ≈ [s, s] rtol = 1e-8
+    @test cost_by_q ≈ [s, s] rtol = 1e-7
+    @test reshape(by_q, 2, 2) ≈ [0.5 -0.5; -0.5 0.5] rtol = 1e-7
+    @test by_c ≈ [0.5, 0.5] rtol = 1e-7
+    @test lam_by_c ≈ [-1.0] rtol = 1e-7
+    @testset "a written module has the solver" begin
+        text = sprint(io -> generate_julia(f, io; module_name = :Written, name = :run!, expand = false, solvers = SOLVERS))
+        src = Module()
+        Base.include_string(src, text)
+        written = Base.invokelatest((r, a) -> src.Written.run_nonzeros!(r, a), [fill(NaN, n) for n in nnz_out(f)], Tuple(values))
+        @test written[1] ≈ x && written[7] ≈ by_q
+    end
+    @testset "numbers that are not Float64 are refused" begin
+        @test_throws "takes floating-point numbers only" g([zeros(ForwardDiff.Dual{Nothing,Float64,1}, n) for n in nnz_out(f)], (ForwardDiff.Dual.([0.7, -0.2], 1.0), [2.0]))
+    end
+    @testset "a solver that fails" begin
+        # The solution alone keeps the compilation short.
+        solution = CasADiCodegen.Function("f", [q, c], [r["x"]])
+        short = native(solution; solvers = Solvers(optimization = ipopt("max_iter" => 0)))
+        @test_throws "solver \"nearest\": the solver stopped with the return code" evaluated(short, solution, values)
+    end
+end
+
+# The same objective with an upper bound u on x1 below q1: the bound is active
+# with the multiplier 2 (q1 - u), and the constraint x1 + x2 <= 100 is not.
+@testset "active bound and constraint that is not active" begin
+    v, w = MX.sym("v", 2), MX.sym("w", 2)
+    solver = C.nlpsol("bounded", "ipopt", Dict("x" => v, "p" => w, "f" => C.sumsqr(v - w), "g" => v[1] + v[2]))
+    q, u = MX.sym("q", 2), MX.sym("u")
+    r = solved(solver; x0 = MX(C.DM([0.0, 0.0])), p = q, ubx = C.vertcat(MX[u, MX(Inf)]), ubg = MX(100.0))
+    f = CasADiCodegen.Function("f", [q, u], [r["x"], r["lam_x"], r["lam_g"], C.jacobian(r["x"], q), C.jacobian(r["x"], u)])
+    x, lam_x, lam_g, by_q, by_u = evaluated(native(f; solvers = SOLVERS), f, [[0.7, -0.2], [0.3]])
+    @test x ≈ [0.3, -0.2] rtol = 1e-7
+    @test lam_x[1] ≈ 0.8 rtol = 1e-6
+    @test lam_x[2] == 0.0 && lam_g == [0.0]
+    @test reshape(by_q, 2, 2) ≈ [0.0 0.0; 0.0 1.0] atol = 1e-7
+    @test by_u ≈ [1.0, 0.0] atol = 1e-7
+end
+
+@testset "multipliers from the active bounds" begin
+    multipliers = Base.get_extension(CasADiCodegen, :CasADiCodegenSciMLBaseExt).multipliers
+    J, none = zeros(0, 2), Float64[]
+    # gradient + lam_x = 0: positive at the upper bound, negative at the lower one, zero away from the bounds.
+    @test multipliers([-0.8, 0.5, 0.3], zeros(0, 3), [1.0, 2.0, 0.0], [-Inf, 2.0, -1.0], [1.0, Inf, 1.0], none, none, none) == ([0.8, -0.5, 0.0], none)
+    # A bound that the objective pulls away from, or does not push on, is not active.
+    @test multipliers([0.8, 0.0], J, [1.0, 1.0], [-Inf, -Inf], [1.0, 1.0], none, none, none) == ([0.0, 0.0], none)
+    # An unknown with one number for its two bounds takes a multiplier of any sign.
+    @test multipliers([0.8, 0.0], J, [1.0, 1.0], [1.0, -Inf], [1.0, Inf], none, none, none) == ([-0.8, 0.0], none)
+    # A constraint at its bound shares the gradient with the bound of an unknown.
+    lam_x, lam_g = multipliers([-1.0, -3.0], [1.0 1.0], [1.0, 1.0], [-Inf, -Inf], [Inf, 1.0], [2.0], [-Inf], [2.0])
+    @test lam_x ≈ [0.0, 2.0] && lam_g ≈ [1.0]
+end
+
+@testset "the problem of the solver, solved by the user" begin
+    v, w = MX.sym("v", 2), MX.sym("w", 2)
+    solver = C.nlpsol("nearest", "ipopt", Dict("x" => v, "p" => w, "f" => C.sumsqr(v - w), "g" => v[1] + v[2]))
+    problem = SciMLBase.OptimizationProblem(solver, [0.0, 0.0], [0.7, -0.2]; lbg = [2.0], ubg = [2.0])
+    solution = SciMLBase.solve(problem, ipopt())
+    @test SciMLBase.successful_retcode(solution.retcode)
+    @test solution.u ≈ [1.45, 0.55] rtol = 1e-9
+end
+
+# x^4 / 4 - q x has its least value at the cube root of q.
+@testset "no constraint, and derivatives of the second order" begin
+    v, w = MX.sym("v"), MX.sym("w")
+    solver = C.nlpsol("cube", "ipopt", Dict("x" => v, "p" => w, "f" => v^4 / 4 - w * v))
+    q = MX.sym("q")
+    x = solved(solver; x0 = MX(1.0), p = q)["x"]
+    f = CasADiCodegen.Function("f", [q], [x, C.jacobian(x, q), C.jacobian(C.jacobian(x, q), q)])
+    root, slope, curve = evaluated(native(f; solvers = SOLVERS), f, [[2.0]])
+    @test root ≈ [cbrt(2.0)] rtol = 1e-9
+    @test slope ≈ [2.0^(-2 / 3) / 3] rtol = 1e-7
+    @test curve ≈ [-2 / 9 * 2.0^(-5 / 3)] rtol = 1e-6
+end
+
+@testset "no parameter, and one solver for one function" begin
+    v = MX.sym("v", 2)
+    solver = C.nlpsol("plain", "ipopt", Dict("x" => v, "f" => C.sumsqr(v - C.DM([3.0, -1.0]))))
+    a = MX.sym("a")
+    f = CasADiCodegen.Function("f", [a], [a * solved(solver; x0 = MX(C.DM([0.0, 0.0])))["x"]])
+    solvers = Solvers(overrides = (Solver(solver, ipopt()),))
+    @test evaluated(native(f; solvers), f, [[2.0]])[1] ≈ [6.0, -2.0] rtol = 1e-8
+end
+
+# A solver of CasADi for quadratic problems (`conic`) is a problem with the
+# objective x' H x / 2 + g' x and the constraints A x. CasADi has no derivatives
+# of such a solver, and its own solver `qrqp` is the oracle for the values.
+@testset "solver of quadratic problems" begin
+    quiet = Dict("print_iter" => false, "print_header" => false)
+    solver = C.conic("quadratic", "qrqp", Dict("h" => C.Sparsity.diag(2), "a" => C.Sparsity.dense(1, 2)), quiet)
+    d, q, c, u = MX.sym("d", C.Sparsity.diag(2)), MX.sym("q", 2), MX.sym("c"), MX.sym("u")
+    # The upper bound `u` of the first unknown is active for the values below.
+    r = solved(solver; h = d, g = q, a = MX(C.DM([1.0 1.0])), lba = c, uba = c, ubx = C.vertcat(MX[u, MX(Inf)]))
+    f = CasADiCodegen.Function("f", [d, q, c, u], [r["x"], r["cost"], r["lam_a"], r["lam_x"]])
+    @test_throws "CasADiCodegen.Solvers(optimization = ...)" K.algorithm(f; expand = false)
+    values = [[2.0, 4.0], [-1.4, 0.4], [2.0], [0.5]]
+    expected = [vec(Array(C.DM(v))) for v in f(C.DM([2.0 0.0; 0.0 4.0]), map(C.DM, values[2:4])...)]
+    x, cost, lam_a, lam_x = evaluated(native(f; solvers = SOLVERS), f, values)
+    # The interior point method keeps a distance of about 1e-8 from the active bound.
+    @test x ≈ [0.5, 1.5] rtol = 1e-7
+    @test x ≈ expected[1] rtol = 1e-7
+    @test cost ≈ expected[2] rtol = 1e-7
+    @test lam_a ≈ expected[3] rtol = 1e-7
+    @test lam_x ≈ expected[4] atol = 1e-7
+    @testset "the problem of the solver, solved by the user" begin
+        # The parameters are the nonzeros of h, then g, then the nonzeros of a.
+        problem = SciMLBase.OptimizationProblem(solver, [0.0, 0.0], [2.0, 4.0, -1.4, 0.4, 1.0, 1.0]; lbg = [2.0], ubg = [2.0], ubx = [0.5, Inf])
+        @test SciMLBase.solve(problem, ipopt()).u ≈ [0.5, 1.5] rtol = 1e-7
+    end
+end

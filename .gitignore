@@ -1,0 +1,8 @@
+Manifest.toml
+LocalPreferences.toml
+*.jl.cov
+*.jl.*.cov
+*.jl.mem
+.vscode/
+docs/build/
+docs/Manifest.toml
