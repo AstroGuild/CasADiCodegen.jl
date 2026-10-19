@@ -16,7 +16,7 @@ returns one array per output.
 using CasADiCodegen
 
 x, p = SX.sym("x", 2), SX.sym("p")
-f = CasADiCodegen.Function("f", [x, p], [p * x[1] * sin(x[2])])
+f = CasadiFunction("f", [x, p], [p * x[1] * sin(x[2])])
 
 d = CasADiCodegen.differentiable(f)
 d([2.0, pi / 2], [3.0])

@@ -27,7 +27,7 @@ speed is zero:
 apsis = integrator("apsis", Vern9(), Dict("x" => x, "p" => mu, "ode" => ode, "zero" => x[1] * x[3] + x[2] * x[4]);
                    abstol = 1e-12, reltol = 1e-12)
 xe, te = apsis(x0, p, t0, tf)
-f = CasADiCodegen.Function("f", [x0, p, t0, tf], [xe, te, jacobian(xe, x0), jacobian(te, x0)])
+f = CasadiFunction("f", [x0, p, t0, tf], [xe, te, jacobian(xe, x0), jacobian(te, x0)])
 ```
 
 Each call runs two integrations: one that finds the event, and one to the event

@@ -16,7 +16,7 @@ using OrdinaryDiffEqVerner: Vern9
 import SciMLBase
 
 u, k, t = SX.sym("u", 2), SX.sym("k"), SX.sym("t")
-rhs = CasADiCodegen.Function("rhs", [u, k, t], [vertcat(u[2], -k * u[1])])     # also f(u) and f(u, p)
+rhs = CasadiFunction("rhs", [u, k, t], [vertcat(u[2], -k * u[1])])     # also f(u) and f(u, p)
 problem = SciMLBase.ODEProblem(SciMLBase.ODEFunction(rhs), [1.0, 0.0], (0.0, pi), [4.0])
 SciMLBase.solve(problem, Vern9(); abstol = 1e-12, reltol = 1e-12).u[end]
 ```
@@ -30,7 +30,7 @@ We solve two equations in `z` with the parameter `q`:
 using SimpleNonlinearSolve: SimpleNewtonRaphson
 
 z, q = SX.sym("z", 2), SX.sym("q")
-residual = CasADiCodegen.Function("r", [z, q], [vertcat(z[1]^2 + z[2]^2 - q, z[1] - z[2])])   # also f(z)
+residual = CasadiFunction("r", [z, q], [vertcat(z[1]^2 + z[2]^2 - q, z[1] - z[2])])   # also f(z)
 problem = SciMLBase.NonlinearProblem(SciMLBase.NonlinearFunction(residual), [1.0, 0.5], [2.0])
 SciMLBase.solve(problem, SimpleNewtonRaphson(); abstol = 1e-12).u
 ```
@@ -42,8 +42,8 @@ problem needs no `adtype`:
 
 ```@example sciml
 v = SX.sym("v", 2)
-objective = CasADiCodegen.Function("J", [v, q], [(v[1] - q)^2 + v[2]^2])     # also f(v)
-constraints = CasADiCodegen.Function("c", [v, q], [vertcat(v[1] + v[2])])
+objective = CasadiFunction("J", [v, q], [(v[1] - q)^2 + v[2]^2])     # also f(v)
+constraints = CasadiFunction("c", [v, q], [vertcat(v[1] + v[2])])
 f = SciMLBase.OptimizationFunction(objective, constraints)
 problem = SciMLBase.OptimizationProblem(f, [0.0, 0.0], [1.0]; lcons = [1.0], ucons = [Inf])
 nothing # hide

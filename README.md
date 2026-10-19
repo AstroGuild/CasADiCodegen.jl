@@ -48,7 +48,7 @@ using CasADiCodegen
 
 x = SX.sym("x", 2)
 y = x[1]^2 + sin(x[2])
-f = CasADiCodegen.Function("f", [x], [y, gradient(y, x)])
+f = CasadiFunction("f", [x], [y, gradient(y, x)])
 
 f_julia, f_julia! = build_function(f; expression = Val{false})
 value, derivative = f_julia([2.0, 0.0])
@@ -59,7 +59,7 @@ derivative  # [4.0, 1.0]
 
 - `using CasADiCodegen` loads the front end of CasADi: `SX`, `MX`, `gradient`,
   `jacobian` and the other common names.
-- `CasADiCodegen.Function` keeps its module name, because `Function` is a type of Julia.
+- `CasadiFunction` makes a function of CasADi. A bare `Function` is a type of Julia.
 - `f_julia` allocates its outputs. `f_julia!` writes into arrays that the caller gives.
 - `generate_julia(f, path)` writes the same functions to a Julia module, named `F`
   after the function `f` by default.

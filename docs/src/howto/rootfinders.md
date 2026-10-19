@@ -16,12 +16,12 @@ using CasADiCodegen
 using SimpleNonlinearSolve: SimpleNewtonRaphson
 
 E, M, e = SX.sym("E"), SX.sym("M"), SX.sym("e")
-kepler = CasADiCodegen.Function("kepler", [E, M, e], [E - e * sin(E) - M])
+kepler = CasadiFunction("kepler", [E, M, e], [E - e * sin(E) - M])
 anomaly = rootfinder("anomaly", SimpleNewtonRaphson(), kepler; abstol = 1e-14)
 
 m, ec = MX.sym("m"), MX.sym("ec")
 root = anomaly(m, m, ec)                      # the mean anomaly is the first guess
-f = CasADiCodegen.Function("f", [m, ec], [root, jacobian(root, m)])
+f = CasadiFunction("f", [m, ec], [root, jacobian(root, m)])
 g, g! = build_function(f; expression = Val{false})
 g([1.0], [0.3])
 ```

@@ -14,7 +14,7 @@ slow function spends its time on. Here we count the operations of a small functi
 using CasADiCodegen
 
 x = SX.sym("x", 2)
-f = CasADiCodegen.Function("f", [x], [sqrt(x[1] - x[2]) * sin(x[1]) + x[2]^2])
+f = CasadiFunction("f", [x], [sqrt(x[1] - x[2]) * sin(x[1]) + x[2]^2])
 CasADiCodegen.instruction_histogram(f)
 ```
 

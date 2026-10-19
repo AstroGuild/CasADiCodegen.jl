@@ -42,7 +42,7 @@ initial state:
 F = integrator("F", Vern9(), model, 0.0, 3.0; abstol = 1e-13, reltol = 1e-13)
 
 x0, p = MX.sym("x0", 4), MX.sym("p")
-f = CasADiCodegen.Function("f", [x0, p], [F(x0, p), jacobian(F(x0, p), x0)])
+f = CasadiFunction("f", [x0, p], [F(x0, p), jacobian(F(x0, p), x0)])
 g, g! = build_function(f; expression = Val{false})
 xf, stm = g([1.0, 0.0, 0.0, 1.0], [1.0])
 xf
@@ -71,7 +71,7 @@ We differentiate the state by the final time:
 ```@example ode
 G = integrator("G", Vern9(), model; abstol = 1e-13, reltol = 1e-13)
 t0, tf = MX.sym("t0"), MX.sym("tf")
-h = CasADiCodegen.Function("h", [x0, p, t0, tf], [jacobian(G(x0, p, t0, tf), tf)])
+h = CasadiFunction("h", [x0, p, t0, tf], [jacobian(G(x0, p, t0, tf), tf)])
 build_function(h; expression = Val{false})[1]([1.0, 0.0, 0.0, 1.0], [1.0], [0.0], [3.0])
 ```
 
@@ -87,7 +87,7 @@ once.
 
 ```@example ode
 A = integrator("A", Vern9(), model, 0.0, 3.0; adjoint = true, abstol = 1e-13, reltol = 1e-13)
-cost = CasADiCodegen.Function("cost", [x0, p], [gradient(CasADiCodegen.C.sumsqr(A(x0, p)), vertcat(x0, p))])
+cost = CasadiFunction("cost", [x0, p], [gradient(CasADiCodegen.C.sumsqr(A(x0, p)), vertcat(x0, p))])
 build_function(cost; expression = Val{false})[1]([1.0, 0.0, 0.0, 1.0], [1.0])
 ```
 
@@ -171,7 +171,7 @@ final states by all initial states:
 ```julia
 X = MX.sym("X", 4, 20)
 ends = CasADiCodegen.C.map(F, 20)(X, CasADiCodegen.C.repmat(p, 1, 20))
-f = CasADiCodegen.Function("shoot", [X, p], [ends, jacobian(ends, X)])
+f = CasadiFunction("shoot", [X, p], [ends, jacobian(ends, X)])
 ```
 
 Each arc is integrated once. The time per arc is that of a separate function for one

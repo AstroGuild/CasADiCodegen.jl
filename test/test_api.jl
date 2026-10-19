@@ -7,7 +7,7 @@ using CasADiCodegen
 model() = (x = SX.sym("x", 2); (x, [sin(x[1]) * x[2]; x[1]^2]))
 function build()
     x, y = model()
-    CasADiCodegen.Function("f", [x], [y, jacobian(y, x)])
+    CasadiFunction("f", [x], [y, jacobian(y, x)])
 end
 end
 

@@ -24,8 +24,8 @@ apply in Julia:
   `hessian`, `vertcat`, `horzcat`, `substitute` and others.
 - Each other function of CasADi is in the module `CasADiCodegen.C`, for example
   `CasADiCodegen.C.sumsqr` and `CasADiCodegen.C.nlpsol`.
-- `CasADiCodegen.Function` needs its module name, because a bare `Function` is the abstract
-  type of Julia.
+- `CasadiFunction` makes a function of CasADi, because a bare `Function` is the abstract
+  type of Julia. `CasADiCodegen.Function` is another name for the same type.
 - Elements have the indices of Julia: `x[1]` is the first one. Methods of CasADi that
   take an index of an input or an output keep the indices of CasADi, which start at 0.
 
@@ -34,7 +34,7 @@ using CasADiCodegen
 
 x = SX.sym("x", 3)
 y = [sin(x[1]) * x[2]; x[3]^2 / (1 + x[1]^2)]
-f = CasADiCodegen.Function("f", [x], [y, jacobian(y, x)])
+f = CasadiFunction("f", [x], [y, jacobian(y, x)])
 nothing # hide
 ```
 

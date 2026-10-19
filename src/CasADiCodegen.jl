@@ -31,7 +31,21 @@ include("codegen.jl")
 
 using .Codegen: build_function, generate_julia, instruction_histogram, nan_trace, differentiable, Solvers, Solver
 
-export build_function, generate_julia
+"""
+    CasadiFunction(name, inputs, outputs[, options])
+
+Make a function of CasADi from the symbolic `inputs` and `outputs`. `CasadiFunction`
+is the front end's name for `CasADiCodegen.Function`, exported because a bare
+`Function` is the abstract type of Julia.
+
+```julia
+x = SX.sym("x", 2)
+f = CasadiFunction("f", [x], [sin(x[1]) * x[2]])
+```
+"""
+CasadiFunction
+
+export build_function, generate_julia, CasadiFunction
 
 include("precompile.jl")
 

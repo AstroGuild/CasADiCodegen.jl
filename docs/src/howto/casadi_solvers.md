@@ -35,7 +35,7 @@ using CasADiCodegen: Solvers, Solver
 
 x0, p = MX.sym("x0", 4), MX.sym("p")
 final = I(Dict("x0" => x0, "p" => p))["xf"]                    # 4 by 3: one column per output time
-f = CasADiCodegen.Function("f", [x0, p], [final, jacobian(final[:, 3], x0)])
+f = CasadiFunction("f", [x0, p], [final, jacobian(final[:, 3], x0)])
 
 solvers = Solvers(ode = Solver(Vern9(); abstol = 1e-13, reltol = 1e-13))
 g, g! = build_function(f; expression = Val{false}, solvers)
@@ -141,7 +141,7 @@ We take the Jacobian of the final states by the initial state and the restitutio
 s0, q = MX.sym("s0", 2), MX.sym("q")
 final = CasADiCodegen.C.vec(ball(Dict("x0" => s0, "p" => q))["xf"])
 J = jacobian(final, vertcat(s0, q))
-f = CasADiCodegen.Function("f", [s0, q], [final, CasADiCodegen.C.densify(J)])
+f = CasadiFunction("f", [s0, q], [final, CasADiCodegen.C.densify(J)])
 ```
 
 CasADi has no reverse mode through an integrator with events. For an integrator with

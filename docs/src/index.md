@@ -51,10 +51,6 @@ pkg> add https://github.com/EllissoideRotondo/CasADiCodegen.jl
 
 The binaries of CasADi 3.8.1 and its Julia front end come with the package.
 
-!!! note "Users of versions before 0.26.0"
-    Integer options in a Dict, such as `"number_of_finite_elements" => 7`, reached
-    CasADi as 1 before version 0.26.0. See [Numbers in a Dict of options](@ref).
-
 ## Contents
 
 ### Tutorial

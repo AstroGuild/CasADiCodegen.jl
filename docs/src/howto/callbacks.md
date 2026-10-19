@@ -15,7 +15,7 @@ drag_jacobian(v) = (n = sqrt(v[1]^2 + v[2]^2); -0.5 * (n * [1 0; 0 1] + v * v' /
 force = callback(drag, "drag", (2,), (2,); jacobian = drag_jacobian)
 
 v = MX.sym("v", 2)
-f = CasADiCodegen.Function("f", [v], [force(2v), jacobian(force(2v), v)])
+f = CasadiFunction("f", [v], [force(2v), jacobian(force(2v), v)])
 g, g! = build_function(f; expression = Val{false})
 g([3.0, 4.0])[2]
 ```

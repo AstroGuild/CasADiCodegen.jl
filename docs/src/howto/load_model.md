@@ -11,7 +11,7 @@ In the other language, we save the function with the method `save` of CasADi:
 f.save("model.casadi")        # Python; in MATLAB the call is the same
 ```
 
-In Julia, we load the file with `CasADiCodegen.Function.load`. `build_function` and
+In Julia, we load the file with `CasadiFunction.load`. `build_function` and
 `generate_julia` take the result as any other function. In the example, a function
 made in Julia stands for the model of the other language:
 
@@ -19,9 +19,9 @@ made in Julia stands for the model of the other language:
 using CasADiCodegen
 
 x = SX.sym("x", 2)                                    # stands for the model of the other language
-CasADiCodegen.Function("f", [x], [x[1] * sin(x[2])]).save(joinpath(tempdir(), "model.casadi"))
+CasadiFunction("f", [x], [x[1] * sin(x[2])]).save(joinpath(tempdir(), "model.casadi"))
 
-f = CasADiCodegen.Function.load(joinpath(tempdir(), "model.casadi"))
+f = CasadiFunction.load(joinpath(tempdir(), "model.casadi"))
 g, g! = build_function(f; expression = Val{false})
 g([2.0, 0.5])
 ```

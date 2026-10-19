@@ -1,7 +1,7 @@
 # API reference
 
 This page lists the functions and types of CasADiCodegen.jl, grouped by task. The
-package exports `build_function` and `generate_julia`, and `using CasADiCodegen`
+package exports `build_function`, `generate_julia` and `CasadiFunction`, and `using CasADiCodegen`
 also gives the names that the front end of CasADi exports, such as `SX`, `MX`,
 `jacobian` and `vertcat`. The other names of this page need the prefix
 `CasADiCodegen.`, except `callback`, `integrator` and `rootfinder`, which are
@@ -10,6 +10,7 @@ exported functions of the front end to which the package adds methods.
 ## Code generation
 
 ```@docs
+CasadiFunction
 build_function
 generate_julia
 ```
