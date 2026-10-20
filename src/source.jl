@@ -185,9 +185,10 @@ The module holds:
   and `SPARSITY_OUT`. Each sparsity pattern is `(nrow, ncol, colptr, rowval)`, 1-based.
   `NWORK` is the length of the work vector.
 
-The module does not need CasADiCodegen.jl. It imports StaticArraysCore.jl for the method with
-static arrays. It imports NaNMath.jl, SpecialFunctions.jl and SparseArrays.jl only when the
-code uses them, and never NaNMath.jl with `nanmath = false`.
+The module does not need CasADiCodegen.jl. It always imports StaticArraysCore.jl for the
+static-array method. It imports NaNMath.jl when the generated code uses its functions, unless
+`nanmath = false`, and imports SpecialFunctions.jl when the code uses it. It imports
+SparseArrays.jl whenever an input or output has a structurally sparse pattern.
 
 A Julia function of a `callback` must be a named function of a module. The module calls it
 by its full name and imports its package.
