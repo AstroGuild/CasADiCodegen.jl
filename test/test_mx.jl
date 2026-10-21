@@ -329,7 +329,12 @@ function graph_function(steps)
     u, v = MX.sym("u", 3), MX.sym("v", 3)
     nodes = Any[u, v]
     for (kind, i, j) in steps
-        push!(nodes, GRAPH_STEPS[kind](nodes[mod1(i, length(nodes))], nodes[mod1(j, length(nodes))]))
+        # Loop invariant: each node is a vector of 3 numbers.
+        node = GRAPH_STEPS[kind](nodes[mod1(i, length(nodes))], nodes[mod1(j, length(nodes))])
+        # CasADi can simplify a step to a scalar, as (v - u[3]) - v to -u[3].
+        C.numel(node) == 1 && (node = C.repmat(node, 3, 1))
+        @assert size(node) == (3, 1)
+        push!(nodes, node)
     end
     CasADiCodegen.Function("g", [u, v], [C.vertcat([nodes[end], nodes[max(end - 1, 1)]]), nodes[max(end - 2, 1)]])
 end
@@ -340,6 +345,9 @@ const graph_step = @composed function graph_step_(kind = Data.Integers(1, length
 end
 
 @testset "property: random matrix graphs equal CasADi" begin
+    # A graph in which CasADi simplifies a step to a scalar.
+    simplified = graph_function([(10, 2, 1), (2, 9, 29), (10, 1, 20)])
+    @test isequal(mx_casadi(simplified, [[0.3, -1.2, 0.8], [0.5, 2.0, -0.7]]), mx_emitted(simplified, [[0.3, -1.2, 0.8], [0.5, 2.0, -0.7]]; chunk_size = 1))
     @check max_examples = 80 function graph_equals_casadi(
             steps = Data.Vectors(graph_step; min_size = 1, max_size = 15),
             u = Data.Vectors(test_float; min_size = 3, max_size = 3),
