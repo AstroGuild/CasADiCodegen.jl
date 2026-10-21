@@ -30,6 +30,16 @@ end
 "The context module of the runtime generated functions that `build_function` makes."
 const CONTEXT = Base.ScopedValues.ScopedValue{Module}(@__MODULE__)
 
+# Contexts whose generated code Julia compiles at the optimization levels 0 to 3 (keyword `optlevel`).
+for level in 0:3
+    @eval module $(Symbol(:OptLevel, level))
+    import ..RuntimeGeneratedFunctions
+    Base.Experimental.@optlevel $level
+    RuntimeGeneratedFunctions.init(@__MODULE__)
+    end
+end
+const OPTLEVEL_CONTEXTS = (OptLevel0, OptLevel1, OptLevel2, OptLevel3)
+
 const Front = parentmodule(@__MODULE__)
 const C = Front.C
 const SX = C.SX

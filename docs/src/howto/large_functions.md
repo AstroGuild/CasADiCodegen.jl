@@ -1,9 +1,9 @@
 # Large functions and the cache on disk
 
 A model with tens of thousands of instructions compiles slowly, and Julia compiles
-it again in each session. This page shows the two remedies of the package, which are
-a split of the code into sub-functions and a cache of compiled code on disk, and the
-setting of the tests that keeps the compilation short.
+it again in each session. This page shows the remedies of the package, which are a
+split of the code into sub-functions, a lower optimization level and a cache of
+compiled code on disk, and the setting of the tests that keeps the compilation short.
 
 ## Split a large function
 
@@ -27,6 +27,29 @@ The split can shorten the first call of a large model by a factor of six, but it
 makes the later calls 15 to 40 percent slower. Raise `split_above` when the speed of
 the later calls matters more than the first call; [Split of a large function](@ref)
 gives the measurements behind the defaults.
+
+## Compile at a lower optimization level
+
+For a function that is built in the session, compiling the generated body at the first
+call takes most of the time, while CasADi and the emission of the code take
+milliseconds. The keyword `optlevel` of `build_function` makes Julia compile the
+returned functions at a lower optimization level, as `Base.Experimental.@optlevel`
+sets it for a module, which suits a model that changes often:
+
+```julia
+g, g! = build_function(f; expression = Val{false}, optlevel = 1)
+```
+
+| `optlevel` | First call | Later calls |
+|---|---|---|
+| 2 (the default of Julia) | 0.41 s | 1.55 µs |
+| 1 | 0.27 s | 1.60 µs |
+| 0 | 0.21 s | 2.07 µs |
+
+The times are those of the right-hand side of a second-order state transition
+tensor of the two-body problem with the J2 term, 258 states, called with static arrays
+on Julia 1.13. `generate_julia` takes the same keyword and writes the level into the
+module, and with `cache` the cached package is compiled at that level.
 
 ## Keep the compiled code between sessions
 

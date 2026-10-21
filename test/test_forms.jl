@@ -314,3 +314,21 @@ end
         @test (@allocated run(g, xs)) == 0
     end
 end
+
+module_optlevel(m::Module) = ccall(:jl_get_module_optlevel, Cint, (Any,), m)
+
+@testset "optlevel sets the optimization level of the compiled functions" begin
+    x = SX.sym("x", 2)
+    f = CasADiCodegen.Function("f", [x], [[x[1]^2 + sin(x[2]); x[1] * x[2]]])
+    expected = build_function(f; expression = Val{false})[1]([0.3, 1.7])
+    for level in (0, 1, 3)
+        g, _ = build_function(f; expression = Val{false}, optlevel = level)
+        @test g([0.3, 1.7]) == expected
+        @test module_optlevel(parentmodule(typeof(g).parameters[3])) == level
+    end
+    source = Module()
+    Base.include_string(source, sprint(io -> generate_julia(f, io; module_name = :Gen, optlevel = 1)))
+    @test module_optlevel(source.Gen) == 1
+    @test_throws ArgumentError build_function(f; expression = Val{false}, optlevel = 4)
+    @test_throws ArgumentError build_function(f; optlevel = 1)
+end

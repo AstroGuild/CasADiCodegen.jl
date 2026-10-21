@@ -44,6 +44,13 @@ Feature: Generated functions in the in-place and the out-of-place form
     Then all forms give the values of CasADi
     And generate_julia writes the three functions to the module, which imports StaticArraysCore, and StaticArrays when a Julia function gets static arrays
 
+  Scenario: Optimization level of the compiled functions
+    When the user calls build_function(f; expression = Val{false}, optlevel = 1)
+    Then Julia compiles the returned functions at optimization level 1
+    And they give the same values as with the default level
+    And generate_julia(f, io; optlevel = 1) writes a module with that level
+    And an optlevel outside 0 to 3, or with an expression, fails with an ArgumentError
+
   Scenario: Wrong use
     When the name does not end with "!", or an array has the wrong number of elements
     Then the call fails with an ArgumentError

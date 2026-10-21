@@ -355,6 +355,9 @@ function expanded_algorithm(f::C.Function)
     end
 end
 
+check_optlevel(optlevel) =
+    @requires optlevel === nothing || 0 <= optlevel <= 3 "optlevel must be nothing or an integer from 0 to 3, got $optlevel"
+
 expression_flag(::Type{Val{B}}) where {B} = B::Bool
 expression_flag(::Val{B}) where {B} = B::Bool
 expression_flag(other) =
@@ -363,7 +366,7 @@ expression_flag(other) =
 """
     build_function(f; expression = Val{true}, force_SA = false, nonzeros = false,
                    name = Symbol(name_of_f, "!"), chunk_size = nothing, split_above = nothing,
-                   nanmath = true, expand = true, cache = false, solvers = nothing)
+                   nanmath = true, expand = true, cache = false, solvers = nothing, optlevel = nothing)
 
 Generate Julia code for the CasADi function `f`, in the manner of
 `Symbolics.build_function`. Return an out-of-place function `g(arg1, arg2, ...)` and an
@@ -411,6 +414,11 @@ Both functions take arrays in matrix shape; a column is a vector.
   `expression = Val{false}`. Code that runs already must call the functions with
   `Base.invokelatest`. A Julia function in the graph must belong to a package. See
   [Large functions and the cache on disk](@ref).
+- `optlevel = nothing`: with an integer from 0 to 3, Julia compiles the functions at this
+  optimization level, as `Base.Experimental.@optlevel` sets it, in place of the level of
+  the session (`-O`, 2 by default). A lower level shortens the compilation at the first
+  call of a large function and can slow the later calls. It needs `expression = Val{false}`,
+  and with `cache` it sets the level of the cached package.
 - `solvers = nothing`: a [`CasADiCodegen.Solvers`](@ref Solvers) with the SciML solvers that the
   code calls in place of the solver objects of CasADi in the graph. Generated code never
   calls CasADi, so such an object with no solver throws an `ArgumentError`.
@@ -442,11 +450,17 @@ function build_function(f; expression = Val{true},
                         chunk_size::Union{Nothing,Integer} = nothing,
                         split_above::Union{Nothing,Integer} = nothing, nanmath::Bool = true,
                         expand::Bool = true, cache::Union{Bool,AbstractString} = false,
-                        solvers::Union{Nothing,Solvers} = nothing)
+                        solvers::Union{Nothing,Solvers} = nothing, optlevel::Union{Nothing,Integer} = nothing)
+    check_optlevel(optlevel)
+    @requires optlevel === nothing || !expression_flag(expression) "optlevel sets the compilation of the returned functions, so it needs expression = Val{false}"
     if cache !== false
         @requires !expression_flag(expression) "the cache holds compiled functions, so it needs expression = Val{false}"
-        return cached_functions(f, cache_directory(cache); nonzeros, force_SA, name, expand, solvers, chunk_size, split_above, nanmath)
+        return cached_functions(f, cache_directory(cache); nonzeros, force_SA, name, expand, solvers, chunk_size, split_above, nanmath, optlevel)
     end
+    optlevel === nothing ||
+        return Base.ScopedValues.with(CONTEXT => OPTLEVEL_CONTEXTS[optlevel+1]) do
+            build_function(f; expression, force_SA, nonzeros, name, chunk_size, split_above, nanmath, expand, solvers)
+        end
     chunk_size = Split(chunk_size, split_above)
     alg = one_function(algorithm(f; expand, solvers), chunk_size)
     ref = nanmath ? global_ref : throwing(global_ref)
