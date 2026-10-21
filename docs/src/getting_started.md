@@ -130,12 +130,22 @@ its first letter in upper case. The module holds `F.f`, `F.f!` and `F.f_nonzeros
 | `NNZ_IN`, `NNZ_OUT` | Tuples of the numbers of structural nonzeros of the inputs and outputs |
 | `NWORK` | Length of the work vector |
 | `SPARSITY_IN`, `SPARSITY_OUT` | Tuples of sparsity patterns, each `(nrow, ncol, colptr, rowval)` with indices from 1 |
+| `DEPENDENCIES` | Sorted tuple of the names of the packages that the module imports |
 
-The module imports StaticArraysCore.jl and, when the code uses them, NaNMath.jl,
-SpecialFunctions.jl and SparseArrays; each package must be in the environment that
-loads the file. A model with an integrator, a rootfinder or an optimization solver
-gives a module that also loads CasADiCodegen.jl, SciMLBase.jl and the package of the
-algorithm.
+The module imports StaticArraysCore.jl for the method with static arrays, NaNMath.jl
+unless `nanmath = false`, and SparseArrays.jl whenever an input or an output has
+structural zeros, as the Jacobian of this model has, even when every caller passes
+dense arrays; SpecialFunctions.jl, LinearAlgebra and the packages of Julia functions
+in the model are imported when the code calls them. Each package must be in the
+environment that loads the file, and a package that includes the file must list the
+packages of `DEPENDENCIES` as its own dependencies:
+
+```@example start
+F.DEPENDENCIES
+```
+
+A model with an integrator, a rootfinder or an optimization solver gives a module
+that also loads CasADiCodegen.jl, SciMLBase.jl and the package of the algorithm.
 
 ## Choose a form
 

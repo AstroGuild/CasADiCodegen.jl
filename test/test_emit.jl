@@ -104,6 +104,18 @@ end
     @test_throws MethodError compiled(demo_algorithm())([zeros(BigFloat, 2)], (BigFloat[0.3, -1.7], BigFloat[2.5]))
 end
 
+@testset "DEPENDENCIES lists the imports of the module" begin
+    imported(source) = Tuple(sort!([Symbol(m[1]) for m in eachmatch(r"^import (\w+)$"m, source)]))
+    x = SX.sym("x", 2)
+    y = [sqrt(x[1]); x[2]^2]
+    for (nanmath, expected) in ((true, (:NaNMath, :SparseArrays, :StaticArraysCore)), (false, (:SparseArrays, :StaticArraysCore)))
+        source = sprint(io -> generate_julia(CasadiFunction("f", [x], [y, jacobian(y, x)]), io; module_name = :Gen, nanmath))
+        mod = Module()
+        Base.include_string(mod, source)
+        @test mod.Gen.DEPENDENCIES == imported(source) == expected
+    end
+end
+
 @testset "wrong argument shape" begin
     alg = demo_algorithm()
     # The checks are in the entry function, which the split does not change.

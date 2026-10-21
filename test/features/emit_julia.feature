@@ -16,6 +16,7 @@ Feature: Emit Julia code from a CasADi function
     Then the file holds one standalone module
     And a Julia process that never loads CasADi can include the file
     And the function in that module gives the same numbers as the runtime generated function
+    And the constant DEPENDENCIES of the module names each package that it imports
 
   Scenario: Julia expression
     When the user calls build_function(f)

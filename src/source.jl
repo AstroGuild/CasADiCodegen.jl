@@ -181,13 +181,21 @@ The module holds:
 - the in-place function `name`;
 - the out-of-place function, whose name is `name` without `!`;
 - the function on nonzeros, whose name is that name followed by `_nonzeros!`;
-- the constants `NAME`, `NAMES_IN`, `NAMES_OUT`, `NNZ_IN`, `NNZ_OUT`, `NWORK`, `SPARSITY_IN`
-  and `SPARSITY_OUT`. Each sparsity pattern is `(nrow, ncol, colptr, rowval)`, 1-based.
-  `NWORK` is the length of the work vector.
+- the constants `NAME`, `NAMES_IN`, `NAMES_OUT`, `NNZ_IN`, `NNZ_OUT`, `NWORK`, `SPARSITY_IN`,
+  `SPARSITY_OUT` and `DEPENDENCIES`. Each sparsity pattern is `(nrow, ncol, colptr, rowval)`,
+  1-based. `NWORK` is the length of the work vector. `DEPENDENCIES` is the sorted tuple of
+  the names of the packages that the module imports.
 
-The module does not need CasADiCodegen.jl. It imports StaticArraysCore.jl for the method with
-static arrays. It imports NaNMath.jl, SpecialFunctions.jl and SparseArrays.jl only when the
-code uses them, and never NaNMath.jl with `nanmath = false`.
+The module does not need CasADiCodegen.jl. A package that includes the file must have each
+package of `DEPENDENCIES` as a dependency. The module imports:
+
+- StaticArraysCore.jl, for the method with static arrays, unless `f` has no input;
+- NaNMath.jl, when the code has an operation with a limited domain, such as `sqrt` or
+  `log`, unless `nanmath = false`;
+- SparseArrays.jl, when an input or an output has structural zeros, as most Jacobians have,
+  for the methods with sparse matrices;
+- SpecialFunctions.jl for `erfinv`, LinearAlgebra for the factorizations of matrix code,
+  StaticArrays.jl and the package of each Julia function of a `callback`.
 
 A Julia function of a `callback` must be a named function of a module. The module calls it
 by its full name and imports its package.
@@ -264,6 +272,7 @@ function generate_julia(f, io::IO;
     println(io, "const NWORK = ", nwork)
     println(io, "const SPARSITY_IN = ", repr(Tuple(sparsity_tuple.(alg.sparsity_in))))
     println(io, "const SPARSITY_OUT = ", repr(Tuple(sparsity_tuple.(alg.sparsity_out))))
+    println(io, "const DEPENDENCIES = ", repr(Tuple(sort!(collect(imports)))))
     # The objects of the solvers, which the cache on disk compiles (see `warm`).
     objects = sort!([name for name in values(writer.names) if startswith(String(name), "object_")])
     isempty(objects) || push!(writer.definitions, Expr(:const, :(OBJECTS = $(Expr(:tuple, objects...)))))
