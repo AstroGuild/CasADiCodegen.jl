@@ -1,6 +1,6 @@
 # CasADiCodegen.jl
 
-[![Docs: dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://EllissoideRotondo.github.io/CasADiCodegen.jl/dev/)
+[![Docs: dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://AstroGuild.github.io/CasADiCodegen.jl/dev/)
 
 CasADiCodegen.jl is a package for generating plain Julia code from the functions of
 [CasADi](https://web.casadi.org/), the framework for symbolic modelling and
@@ -35,7 +35,7 @@ CasADi graph, which CasADi differentiates and the package emits. The interface o
 CasADiCodegen.jl supports Julia 1.12 and 1.13. Install it from GitHub:
 
 ```julia-repl
-pkg> add https://github.com/EllissoideRotondo/CasADiCodegen.jl
+pkg> add https://github.com/AstroGuild/CasADiCodegen.jl
 ```
 
 The binaries of CasADi 3.8.1 come with the package.
@@ -69,8 +69,8 @@ derivative  # [4.0, 1.0]
 ## Tutorials and Documentation
 
 For information on using the package, see the
-[documentation](https://EllissoideRotondo.github.io/CasADiCodegen.jl/dev/). It starts
-with a [tutorial](https://EllissoideRotondo.github.io/CasADiCodegen.jl/dev/getting_started/)
+[documentation](https://AstroGuild.github.io/CasADiCodegen.jl/dev/). It starts
+with a [tutorial](https://AstroGuild.github.io/CasADiCodegen.jl/dev/getting_started/)
 that builds a model, generates Julia functions for it and compares the forms of the
 generated code. Its how-to guides then cover models from other languages, Julia
 models traced into CasADi, calls to Julia code, integrators, events and rootfinders,
@@ -88,7 +88,7 @@ CasADi, and the API reference ends the manual.
 - The package is tested on Linux; macOS is not tested. It does not load on Windows,
   because the Windows build of the CasADi front end lacks functions that it needs.
 
-The page [Scope and differences from CasADi](https://EllissoideRotondo.github.io/CasADiCodegen.jl/dev/explanation/scope/)
+The page [Scope and differences from CasADi](https://AstroGuild.github.io/CasADiCodegen.jl/dev/explanation/scope/)
 of the manual lists all limits.
 
 ## Acknowledgements
