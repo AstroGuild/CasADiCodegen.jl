@@ -371,7 +371,7 @@ function ode_integrator(name::AbstractString, dae, make_solver; adjoint::Bool = 
 end
 
 """
-    ode_event(name, dae, make_solver, make_event; adjoint = false, events = 1, terminal = true) -> CasADiCodegen.Function
+    ode_event(name, dae, make_solver, make_event; adjoint = false, events = 1, terminal = true, mass = Float64[]) -> CasADiCodegen.Function
 
 Return the CasADi function `(x0, p, t0, tf) -> (xf, te)` that integrates `dae`
 from `t0` toward `tf` and stops at the event. The event is the first time `te`
@@ -389,6 +389,8 @@ integration can start on the surface. The results do not depend on `tf`.
   parameters. It returns the Julia function `(tf, x0, p, t0) -> te`, without
   `p` when the model has none. That function throws when no event comes before
   `tf`.
+- `mass`: that of `ode_integrator`. `rhs!` then carries it, and the algebraic states
+  of `x0` are a guess.
 
 # Keywords
 - `events`: the number of events that the integration passes. With more than
@@ -405,11 +407,12 @@ The event time is the root of the event function on the state of the free-time
 integrator, so CasADi differentiates it by the implicit function theorem, to
 any order.
 """
-function ode_event(name::AbstractString, dae, make_solver, make_event; adjoint::Bool = false, events::Integer = 1, terminal::Bool = true)
+function ode_event(name::AbstractString, dae, make_solver, make_event; adjoint::Bool = false, events::Integer = 1, terminal::Bool = true,
+                   mass::Vector{Float64} = Float64[])
     check_dae(name, dae; event = true)
     @requires haskey(dae, "zero") "integrator \"$name\": the entry \"zero\" is necessary"
     @requires events >= 1 "integrator \"$name\": the number of events must be 1 or more; got $events"
-    arc = ode_integrator(name * "_arc", Dict{String,Any}(key => value for (key, value) in dae if !(key in ("zero", "transition"))), make_solver; adjoint)
+    arc = ode_integrator(name * "_arc", Dict{String,Any}(key => value for (key, value) in dae if !(key in ("zero", "transition"))), make_solver; adjoint, mass)
     x, has_p, has_quad = dae["x"], haskey(dae, "p"), haskey(dae, "quad")
     symbol = typeof(x).sym
     p = has_p ? dae["p"] : symbol("p", 0)
@@ -418,7 +421,7 @@ function ode_event(name::AbstractString, dae, make_solver, make_event; adjoint::
     surface = Front.Function("surface", [x, p, t], [Front.densify(dae["zero"])])
     model = Front.Function("rhs", [x, p, t], [Front.densify(dae["ode"])])
     emitted(g) = Emitted(build_function(g; expression = Val{false}, nonzeros = true), g, :nonzeros)
-    find = make_event(RightSide(emitted(model)), emitted(surface), n, m)
+    find = make_event(RightSide(emitted(model), mass, algebraic_slope(Front.densify(dae["ode"]), x, p, t, mass)), emitted(surface), n, m)
 
     x0, t0, tf, te = Front.MX.sym("x0", n), Front.MX.sym("t0"), Front.MX.sym("tf"), Front.MX.sym("te")
     q = has_p ? [Front.MX.sym("p", m)] : Front.MX[]
@@ -561,6 +564,21 @@ function state_rate(ode, x, p, t, mass::Vector{Float64})
 end
 
 """
+    algebraic_slope(ode, x, p, t, mass)
+
+Return the generated code of the Jacobian of the algebraic equations of `ode` by the
+algebraic states, the rows and states of `x` with a zero in `mass`, for the right side of a
+solver (see `RightSide`); `nothing` when `mass` is empty.
+"""
+function algebraic_slope(ode, x, p, t, mass::Vector{Float64})
+    isempty(mass) && return nothing
+    rows = findall(iszero, mass)
+    by_all = Front.jacobian(Front.vertcat([ode[r] for r in rows]), x)
+    by_state = Front.Function("slope", [x, p, t], [Front.densify(Front.horzcat([by_all[:, r] for r in rows]))])
+    Emitted(build_function(by_state; expression = Val{false}, nonzeros = true), by_state, :nonzeros)
+end
+
+"""
     integration(name, dae, free, make_solver, tail = Float64[]; adjoint = false, mass = Float64[]) -> CasADiCodegen.Function
 
 Return the CasADi function of `ode_integrator` for a checked `dae`. With
@@ -589,15 +607,7 @@ function integration(name::AbstractString, dae, free::Bool, make_solver, tail::V
     rhs = build_function(model; expression = Val{false}, nonzeros = true)
     # A solver that is compiled before the right side would call it with boxed arguments.
     precompile(rhs, (Tuple{Vector{Float64}}, Tuple{Vector{Float64},Vector{Float64},Tuple{Float64}}))
-    slope = nothing
-    if !isempty(mass)
-        # The Jacobian of the algebraic equations by the algebraic states, for their initial values.
-        rows = findall(iszero, mass)
-        by_all = Front.jacobian(Front.vertcat([ode[r] for r in rows]), x)
-        by_state = Front.Function("slope", [x, p, t], [Front.densify(Front.horzcat([by_all[:, r] for r in rows]))])
-        slope = Emitted(build_function(by_state; expression = Val{false}, nonzeros = true), by_state, :nonzeros)
-    end
-    run = Integration(String(name), make_solver(RightSide(Emitted(rhs, model, :nonzeros), mass, slope), n, m), tail)
+    run = Integration(String(name), make_solver(RightSide(Emitted(rhs, model, :nonzeros), mass, algebraic_slope(ode, x, p, t, mass)), n, m), tail)
 
     # CasADi can ask for the Jacobian more than once, because it does not keep a function that
     # nothing uses; the second integrator is made once, so that each call of it is the same one.

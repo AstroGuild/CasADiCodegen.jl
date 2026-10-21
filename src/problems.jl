@@ -287,26 +287,29 @@ the state `u` and the parameters `p` of `right_side`:
 
 - `zero`: `(u, p, t) -> e`, the event functions. Event `i` is a change of sign of `e[i]`
   from positive to negative.
-- `jump`: `(u, p, t, index) -> u`, the state after the event `index`, which counts from
+- `jump`: `(u, p, t, index, z) -> u`, the state after the event `index`, which counts from
   zero. The new states are those of `transition`, a function with the inputs of
   `event_in()` and the results of `event_out()`. Without it (`nothing`) the states do not
-  change.
+  change. `z` has the size of the algebraic states of `u`, whose first block, that of the
+  model, holds the algebraic states that satisfy the algebraic equations after the event.
+  The algebraic states of the result are only a guess, which the caller makes consistent.
 
 With forward directions, the event time has the derivative `-de / (de/dt)` along the
 trajectory (the implicit function theorem), and `jump` adds its effect to the derivatives
 of the states and of the quadratures: the rate before the event times that derivative, the
-derivative of `transition`, then minus the rate after the event. The model must then have
-no algebraic states.
+derivative of `transition`, then minus the rate after the event, which depends on `z`. The
+rate of the algebraic states, which `de/dt` needs, comes from the derivative of the
+algebraic equations along the trajectory.
 """
 function event_functions(model, transition)
     dae, directions, ne = model.dae, model.nfwd, model.events
-    @requires directions == 0 || C.nnz_in(dae, 2) == 0 "integrator \"$(model.name)\": the derivatives of an integrator with algebraic states and an event function are not supported"
     point = input_symbols(dae)
     time = MX.sym("t")
     C.nnz(C.sparsity(point[1])) == 0 || (point[1] = time)
     index = MX.sym("index")
     evaluate(at) = map(column_of, as_list(C.call(dae, at, false, false)))
-    ode, _, quad, e = evaluate(point)
+    ode, alg, quad, e = evaluate(point)
+    nx1, nz1, nq1 = C.nnz_in(dae, 1), C.nnz_in(dae, 2), C.nnz_out(dae, 2)
     # The states after the event, with the sparsity patterns of the model; an empty result keeps the states.
     after = point[2:3]
     if transition !== nothing
@@ -315,39 +318,48 @@ function event_functions(model, transition)
         made = as_list(C.call(transition, arguments, false, false))
         after = MX[C.nnz_out(transition, o) == 0 ? after[o+1] : piece(column_of(made[o+1]), 0, C.sparsity_in(dae, o + 1)) for o in 0:1]
     end
+    consistent = nz1 == 0 ? after[2] : MX.sym("z_after", C.sparsity_in(dae, 2))
     seeds = [MX[MX.sym("d$(k)_" * C.name_in(dae, i)::String, C.sparsity_in(dae, i)) for i in 1:4] for k in 1:directions]
     results = MX[column_of(after[1]), column_of(after[2])]
     shifts = MX[]
     if directions > 0
-        rate_after, quad_after = evaluate(MX[point[1]; after; point[4:5]])[[1, 3]]
+        rate_after, quad_after = evaluate(MX[point[1]; after[1]; consistent; point[4:5]])[[1, 3]]
         along(value, seed) = reduce(+, (C.jtimes(value, point[i+1], seed[i]) for i in eachindex(seed) if C.nnz(C.sparsity(point[i+1])) > 0); init = MX(C.DM(zeros(size(value)...))))
         chosen = C.vertcat(MX[C.eq(index, MX(Float64(i - 1))) for i in 1:ne])::MX
+        # The rate of the algebraic states, from the derivative of the algebraic equations along the trajectory.
+        z_rate = nz1 == 0 ? after[2] :
+                 piece(-C.solve(C.jacobian(alg, point[3]), C.jacobian(alg, time) + C.jtimes(alg, point[2], ode))::MX, 0, C.sparsity_in(dae, 2))::MX
         # The rate of the event function along the trajectory.
         slope = C.jacobian(e, time) + C.jtimes(e, point[2], ode)
+        nz1 == 0 || (slope += C.jtimes(e, point[3], z_rate))
         for seed in seeds
             # Loop invariant: `results` and `shifts` hold the states after the event for the model and the directions before `seed`.
             shift = -C.dot(chosen, along(e, seed)) / C.dot(chosen, slope)
-            moved = MX[seed[1] + shift * ode; seed[2:4]]
+            moved = MX[seed[1] + shift * ode; nz1 == 0 ? seed[2] : seed[2] + shift * z_rate; seed[3:4]]
             change = along(after[1], moved) + C.jtimes(column_of(after[1]), time, shift)
             push!(results, column_of(change) - shift * rate_after)
             push!(shifts, shift * (quad - quad_after))
         end
+        # A guess of the derivatives of the algebraic states, which the caller makes consistent.
+        foreach(seed -> push!(results, column_of(seed[2])), seeds)
     end
     u, p, t = MX.sym("u", model.nx + model.nz + model.nq), MX.sym("p", model.np + model.nu), MX.sym("t")
-    i = MX.sym("index")
-    nx1, nz1, nq1 = C.nnz_in(dae, 1), C.nnz_in(dae, 2), C.nnz_out(dae, 2)
-    core = Front.Function(model.name * "_jump", MX[time; point[2:5]; index; reduce(vcat, seeds; init = MX[])], [C.vertcat(results); shifts])
+    i, z = MX.sym("index"), MX.sym("z", model.nz)
+    known = nz1 == 0 ? MX[] : MX[consistent]
+    core = Front.Function(model.name * "_jump", MX[time; point[2:5]; index; reduce(vcat, seeds; init = MX[]); known], [C.vertcat(results); shifts])
     at = model_block(model, u, p, 0)
-    called = as_list(C.call(core, MX[t; at; i; reduce(vcat, (model_block(model, u, p, k) for k in 1:directions); init = MX[])], false, false))
+    called = as_list(C.call(core, MX[t; at; i; reduce(vcat, (model_block(model, u, p, k) for k in 1:directions); init = MX[]);
+                                     nz1 == 0 ? MX[] : MX[piece(z, 0, C.sparsity_in(dae, 2))]], false, false))
     states = called[1]
-    # The order of `u`: the states of the model and of the directions, the algebraic states, then the quadratures.
-    x_part, z_part, x_dirs = part(states, 0, nx1), part(states, nx1, nz1), part(states, nx1 + nz1, directions * nx1)
+    # The order of `u`: the states of the model and of the directions, the algebraic states of the model and of the directions, then the quadratures.
+    x_part, z_part = part(states, 0, nx1), part(states, nx1, nz1)
+    x_dirs, z_dirs = part(states, nx1 + nz1, directions * nx1), part(states, nx1 + nz1 + directions * nx1, directions * nz1)
     quadratures = part(u, model.nx + model.nz, model.nq)
     moved_sums = directions == 0 || nq1 == 0 ? quadratures :
                  C.vertcat(MX[part(quadratures, 0, nq1); [part(quadratures, k * nq1, nq1) + called[1+k] for k in 1:directions]])
     zero_values = evaluate(MX[C.nnz_in(dae, 0) == 0 ? MX(C.sparsity_in(dae, 0)) : t; at])[4]
     (; zero = Front.Function(model.name * "_zero", [u, p, t], [zero_values]),
-       jump = Front.Function(model.name * "_after", [u, p, t, i], [C.vertcat(MX[x_part, x_dirs, z_part, moved_sums])]))
+       jump = Front.Function(model.name * "_after", [u, p, t, i, z], [C.vertcat(MX[x_part, x_dirs, z_part, z_dirs, moved_sums])]))
 end
 
 """
