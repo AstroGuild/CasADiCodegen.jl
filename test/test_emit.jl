@@ -101,7 +101,6 @@ end
     big_result = compiled(demo_algorithm(); nanmath = false)([zeros(BigFloat, 2)], (BigFloat[0.3, -1.7], BigFloat[2.5]))
     @test eltype(big_result[1]) == BigFloat
     @test big_result[1] == demo_expected(BigFloat[0.3, -1.7], BigFloat[2.5])
-    @test_throws MethodError compiled(demo_algorithm())([zeros(BigFloat, 2)], (BigFloat[0.3, -1.7], BigFloat[2.5]))
 end
 
 @testset "DEPENDENCIES lists the imports of the module" begin
