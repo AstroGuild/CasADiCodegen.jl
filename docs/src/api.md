@@ -15,6 +15,15 @@ build_function
 generate_julia
 ```
 
+## Julia models traced into CasADi
+
+```@docs
+CasADiCodegen.Traced
+CasADiCodegen.traced
+CasADiCodegen.untraced
+Base.ifelse(::CasADiCodegen.Traced, ::Real, ::Real)
+```
+
 ## Julia functions inside a model
 
 ```@docs

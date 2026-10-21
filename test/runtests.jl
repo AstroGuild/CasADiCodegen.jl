@@ -8,7 +8,7 @@ using Test
 # processor threads when that is less). With CASADI_TEST_VERBOSE set, each group
 # prints the time of each of its test sets.
 # The slowest groups come first, so that they do not start last.
-const GROUPS = ("integrator", "mx", "forms", "cache", "casadi", "emit", "nodes", "solvers", "optimization", "callback", "sciml", "root", "api", "rules")
+const GROUPS = ("integrator", "mx", "forms", "cache", "casadi", "emit", "nodes", "solvers", "optimization", "callback", "sciml", "root", "api", "rules", "traced")
 
 """
     run_group(group) -> (passed, seconds, output)

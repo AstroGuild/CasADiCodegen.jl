@@ -14,7 +14,8 @@ Features include:
 
 - Julia functions for the current session with `build_function`, or a Julia module
   on disk with `generate_julia`, each with an out-of-place and an in-place form.
-- Models that were built in Python, MATLAB or C++ and saved by CasADi.
+- Models that were built in Python, MATLAB or C++ and saved by CasADi, and models
+  written as generic Julia code, which a number type traces into CasADi.
 - Calls to Julia functions inside a model, with derivatives from Julia functions or
   from an automatic differentiation backend.
 - Integrators, rootfinders and optimization solvers inside a model, which the
@@ -24,9 +25,10 @@ Features include:
 
 CasADiCodegen.jl is meant for a model that is defined with CasADi and must run as
 Julia code, in a simulation, in an optimization with a Julia solver, or inside a SciML
-problem. A model that is written as Julia code is better served by
-[Symbolics.jl](https://docs.sciml.ai/Symbolics/stable/), whose `build_function`
-CasADiCodegen.jl follows.
+problem. A model that is written as generic Julia code enters CasADi by tracing: the
+number type `CasADiCodegen.Traced` records the operations of the Julia function as a
+CasADi graph, which CasADi differentiates and the package emits. The interface of
+`build_function` follows that of [Symbolics.jl](https://docs.sciml.ai/Symbolics/stable/).
 
 ## Installation
 
@@ -70,12 +72,12 @@ For information on using the package, see the
 [documentation](https://EllissoideRotondo.github.io/CasADiCodegen.jl/dev/). It starts
 with a [tutorial](https://EllissoideRotondo.github.io/CasADiCodegen.jl/dev/getting_started/)
 that builds a model, generates Julia functions for it and compares the forms of the
-generated code. Its how-to guides then cover models from other languages, calls to
-Julia code, integrators, events and rootfinders, the replacement of the solvers of
-CasADi by SciML solvers, CasADi functions in SciML problems, and large models; the
-concept pages explain the matrix code, the derivatives of integrators, the cost of
-the generated code and the differences from CasADi, and the API reference ends the
-manual.
+generated code. Its how-to guides then cover models from other languages, Julia
+models traced into CasADi, calls to Julia code, integrators, events and rootfinders,
+the replacement of the solvers of CasADi by SciML solvers, CasADi functions in SciML
+problems, and large models; the concept pages explain the matrix code, the
+derivatives of integrators, the cost of the generated code and the differences from
+CasADi, and the API reference ends the manual.
 
 ## Limits
 

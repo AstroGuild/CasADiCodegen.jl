@@ -12,7 +12,8 @@ Features include:
 
 - Julia functions for the current session with [`build_function`](@ref), or a Julia module
   on disk with [`generate_julia`](@ref), each with an out-of-place and an in-place form.
-- Models that were built in Python, MATLAB or C++ and saved by CasADi.
+- Models that were built in Python, MATLAB or C++ and saved by CasADi, and models
+  written as generic Julia code, which a number type traces into CasADi.
 - Calls to Julia functions inside a model, with derivatives from Julia functions or
   from an automatic differentiation backend.
 - Integrators, rootfinders and optimization solvers inside a model, which the
@@ -36,9 +37,10 @@ expression graph before the code is generated.
 CasADiCodegen.jl is the right choice when a model is defined with CasADi, or
 exists already in a CasADi file, and the model and its derivatives must run as Julia
 code: in a simulation, in an optimization with a Julia solver, or inside a SciML
-problem. To build a model from Julia code instead, use
-[Symbolics.jl](https://docs.sciml.ai/Symbolics/stable/), whose `build_function`
-CasADiCodegen.jl follows. To evaluate a model with CasADi itself, in C or through
+problem. A model written as generic Julia code enters CasADi by tracing, with the
+number type `CasADiCodegen.Traced`, so that one package serves both kinds of model;
+the interface of `build_function` follows that of
+[Symbolics.jl](https://docs.sciml.ai/Symbolics/stable/). To evaluate a model with CasADi itself, in C or through
 its solvers, use the front end alone or the code generation of CasADi for C.
 
 ## Installation
@@ -66,12 +68,13 @@ Depth = 2
 ### Models
 
 These guides show how a model gets into the package and what it can contain:
-a file of another language, a call to Julia code, an integrator, an event or an
-implicit equation.
+a file of another language, generic Julia code traced into CasADi, a call to Julia
+code, an integrator, an event or an implicit equation.
 
 ```@contents
 Pages = [
     "howto/load_model.md",
+    "howto/traced_models.md",
     "howto/callbacks.md",
     "howto/integrators.md",
     "howto/events.md",

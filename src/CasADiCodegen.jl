@@ -29,7 +29,8 @@ include(typed_front_end, CasADiSWIG_jll.casadi_native_body)
 
 include("codegen.jl")
 
-using .Codegen: build_function, generate_julia, instruction_histogram, nan_trace, differentiable, Solvers, Solver
+using .Codegen: build_function, generate_julia, instruction_histogram, nan_trace, differentiable, Solvers, Solver,
+    Traced, traced, untraced
 
 """
     CasadiFunction(name, inputs, outputs[, options])

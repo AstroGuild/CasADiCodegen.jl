@@ -19,6 +19,7 @@ makedocs(;
         "Getting started" => "getting_started.md",
         "Models" => [
             "howto/load_model.md",
+            "howto/traced_models.md",
             "howto/callbacks.md",
             "howto/integrators.md",
             "howto/events.md",
