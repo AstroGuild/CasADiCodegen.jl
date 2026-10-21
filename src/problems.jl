@@ -151,7 +151,7 @@ numbers(n::Integer) = n == 1 ? "1 number" : "$n numbers"
 function piece(v, from::Int, pattern)
     n = C.nnz(pattern)
     n == 0 && return MX(pattern)
-    values = v[from+1:from+n]
+    values = v[from+1:from+n]::MX
     C.is_dense(pattern) && C.size2(pattern) == 1 ? values : MX(pattern, values)
 end
 
@@ -252,7 +252,7 @@ function right_side(model)
     u, p, t = MX.sym("u", model.nx + model.nz + model.nq), MX.sym("p", model.np + model.nu), MX.sym("t")
     time = C.nnz_in(dae, 0) == 0 ? MX(C.sparsity_in(dae, 0)) : t
     block(k) = model_block(model, u, p, k)
-    parts = [MX[column_of(value)] for value in as_list(C.call(dae, MX[time; block(0)], false, false))[1:3]]
+    parts = Vector{MX}[MX[column_of(value)] for value in as_list(C.call(dae, MX[time; block(0)], false, false))[1:3]]
     if directions > 0
         forward = sensitivity_function(dae)
         for k in 1:directions
@@ -321,7 +321,7 @@ function event_functions(model, transition)
     if directions > 0
         rate_after, quad_after = evaluate(MX[point[1]; after; point[4:5]])[[1, 3]]
         along(value, seed) = reduce(+, (C.jtimes(value, point[i+1], seed[i]) for i in eachindex(seed) if C.nnz(C.sparsity(point[i+1])) > 0); init = MX(C.DM(zeros(size(value)...))))
-        chosen = C.vertcat(MX[C.eq(index, MX(Float64(i - 1))) for i in 1:ne])
+        chosen = C.vertcat(MX[C.eq(index, MX(Float64(i - 1))) for i in 1:ne])::MX
         # The rate of the event function along the trajectory.
         slope = C.jacobian(e, time) + C.jtimes(e, point[2], ode)
         for seed in seeds
@@ -364,7 +364,7 @@ function rootfinder_model(R::C.Function)
        n = serial_value(bytes, "Rootfinder::n"))
 end
 
-other_sizes(model) = [C.nnz_in(model.oracle, i) for i in 0:C.n_in(model.oracle)-1 if i != model.iin]
+other_sizes(model) = Int[C.nnz_in(model.oracle, i) for i in 0:C.n_in(model.oracle)-1 if i != model.iin]
 
 """
     residual_function(model) -> CasADiCodegen.Function
@@ -403,7 +403,7 @@ function optimization_model(S::C.Function)
     (; name, objective, constraints, nx = C.nnz_in(objective, 0), np = C.nnz_in(objective, 1), ng = C.nnz_out(constraints, 0))
 end
 
-part(v, from::Int, n::Int) = n == 0 ? MX(0, 1) : v[from+1:from+n]
+part(v, from::Int, n::Int) = n == 0 ? MX(0, 1) : v[from+1:from+n]::MX
 
 nonzero_column(v) = C.is_dense(v) ? C.vec(v) : C.nnz(C.sparsity(v)) == 0 ? MX(0, 1) : C.vertcat(MX[e for e in C.nonzeros(v)])
 

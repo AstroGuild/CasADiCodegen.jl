@@ -360,6 +360,9 @@ function index_model(op::Symbol, data, values)
     result
 end
 
+"The data of an indexed operation other than `:OP_LOW` (see `index_data`)."
+const IndexForm = @NamedTuple{offsets::Vector{Int}, first::Vector{Int}, second::Vector{Int}}
+
 """
     index_data(op, node, slots) -> NamedTuple
 
@@ -403,7 +406,7 @@ function index_data(op::Symbol, node, slots)
         end
         values[same]
     end
-    forms = NamedTuple[]
+    forms = IndexForm[]
     if length(keys) == 2
         ni = sizes[keys[1]]
         push!(forms, (; offsets = zeros(Int, count), first = [mod1(e, ni) for e in 1:count], second = [(e - 1) ÷ ni + 1 for e in 1:count]))
@@ -470,7 +473,7 @@ function slice_write_data(op::Symbol, node, slots)
     found = casadi(collect(1.0:range), zeros(nk))
     @requires all(isfinite, found) refusal
     ns = count ÷ nk
-    data = (; offsets = round.(Int, found) .- 1, first = [(e - 1) ÷ ns + 1 for e in 1:count], second = Int[])
+    data = IndexForm((round.(Int, found) .- 1, [(e - 1) ÷ ns + 1 for e in 1:count], Int[]))
     tags = [0.37 * k + 1.3 for k in 1:range]
     @requires all(0:2) do shift
         keys = [Float64(mod(3 * j + shift, range + 2) - 1) for j in 1:nk]
@@ -506,7 +509,7 @@ end
 
 function monitor_text(node)
     operand = C.dep(node, 0)
-    named = C.graph_substitute([node], [operand], [MX.sym("monitored", C.sparsity(operand))])[1]
+    named = C.graph_substitute([node], [operand], [MX.sym("monitored", C.sparsity(operand))])[1]::MX
     text, head = C.str(named), "monitor(monitored, "
     startswith(text, head) ? String(chop(text; head = length(head), tail = 1)) : "monitor"
 end
@@ -556,7 +559,7 @@ function table_data(op::Symbol, node, slots)
     evaluate = rebuild(node, operands)
     if op === :OP_BSPLINE
         data = bspline_data(source)
-        check_bspline(data, (x, c) -> only(evaluate(c === nothing ? [x] : [x, c])))
+        check_bspline(data, (x, c) -> only(evaluate(c === nothing ? Vector{Float64}[x] : Vector{Float64}[x, c])))
         data
     elseif op === :OP_EINSTEIN
         @requires allunique(slots) "operation $op: an operand that is used twice is not supported"
@@ -657,7 +660,7 @@ operand.
 """
 function bspline_value(data, x, c)
     coefficients = data.coefficients === nothing ? c : data.coefficients
-    w = [Vector{Float64}(x); zeros(data.m + bspline_scratch(data))]
+    w = [Vector{Float64}(x); zeros((data.m + bspline_scratch(data))::Int)]
     Helpers.var"bspline!"(w, data.knots, 0, bspline_table(data), 0, coefficients, 0, 0, data.n, data.n + data.m)
     w[data.n+1:data.n+data.m]
 end
@@ -680,7 +683,7 @@ function check_bspline(data, casadi)
     inside(d, fraction) = (knots = span(d); knots[1] + fraction * (knots[end] - knots[1]))
     points = [[inside(d, fraction) for d in 1:data.n] for fraction in (0.37, 0.81, 0.0, 1.0, -0.2, 1.3)]
     for x in (all(>(0), data.degrees) ? points : points[1:2])
-        @ensures isapprox(bspline_value(data, x, c), casadi(x, c); rtol = 1e-9, atol = 1e-12, nans = true) "the tables of the B-spline must reproduce CasADi at the point $x"
+        @ensures isapprox(bspline_value(data, x, c)::Vector{Float64}, casadi(x, c); rtol = 1e-9, atol = 1e-12, nans = true) "the tables of the B-spline must reproduce CasADi at the point $x"
     end
     nothing
 end
@@ -732,9 +735,10 @@ with more than half the nonzeros of a dense matrix.
 function qr_tables(A::C.Sparsity)
     n = C.size1(A)
     (n >= 8 && !isfull(A)) || return nothing
-    V, R, prinv, pc = C.qr_sparse(A)
+    V, R, prinv, pc = C.qr_sparse(A)::Tuple{C.Sparsity,C.Sparsity,Vector,Vector}
     (C.size1(V) == n && 2 * (C.nnz(V) + C.nnz(R)) <= n^2) || return nothing
-    Int[n; n; C.nnz(A); C.nnz(V); C.nnz(R); C.colind(A); C.row(A); C.colind(V); C.row(V); C.colind(R); C.row(R); prinv; pc]
+    vcat(Int[n, n, C.nnz(A), C.nnz(V), C.nnz(R)], C.colind(A), C.row(A), C.colind(V), C.row(V), C.colind(R), C.row(R),
+         Vector{Int}(prinv), Vector{Int}(pc))
 end
 
 sparsity_values(sp::C.Sparsity, values) = C.nnz(sp) == 0 ? C.DM(sp) : C.DM(sp, C.DM(values))
@@ -758,11 +762,12 @@ cases need care:
 function rebuild(node, operands)
     f, place = rebuilt_function(node, operands)
     patterns = [C.sparsity_in(f, i - 1) for i in 1:C.n_in(f)]
-    function evaluate(values)
+    function evaluate(values::Vector{Vector{Float64}})
         all = [zeros(C.nnz(sp)) for sp in patterns]
         all[place] = values
         r = f(map(sparsity_values, patterns, all)...)
-        [C.nonzeros(x) ./ 2 for x in (r isa C.DM ? (r,) : r)]
+        results = (r isa C.DM ? C.DM[r] : collect(C.DM, r))::Vector{C.DM}
+        [C.nonzeros(x) ./ 2 for x in results]
     end
 end
 
@@ -788,8 +793,8 @@ function rebuilt_function(node, operands)
                 returned = identity(fresh...)
                 push!(from, parent)
                 # A result with no nonzeros is a constant and not a result of the call.
-                results = returned isa MX ? [returned] : collect(returned)
-                push!(to, C.dep(results[findfirst(C.is_output, results)], 0))
+                listed = as_list(returned)
+                push!(to, C.dep(listed[findfirst(C.is_output, listed)::Int], 0))
                 append!(inputs, fresh)
                 length(inputs) - length(fresh) + 1
             end
@@ -1121,21 +1126,24 @@ The function is checked against `f` on one evaluation.
 function fixed_step_function(f::C.Function)
     bytes = serial_bytes(f)
     field(name) = serial_value(bytes, name)
-    directions, nadj = Int(field("Integrator::nfwd"))::Int, Int(field("Integrator::nadj"))::Int
+    integer(name) = Int(field(name))::Int
+    directions, nadj = integer("Integrator::nfwd"), integer("Integrator::nadj")
     field("Integrator::ne") == 0 || return nothing
     # An integrator with adjoint sensitivities and forward directions is the forward derivative of the one with no
     # direction: the loop is written for that one, and CasADi differentiates it (`outer` directions). Without
     # adjoint sensitivities the directions are in the loop, with the forward derivative of the step.
     outer, nfwd = nadj > 0 ? (directions, 0) : (0, directions)
     shape_in(i) = (C.size1_in(f, i), C.size2_in(f, i) ÷ (1 + outer))
-    nx1, nz1, np1, nu1, nv1 = (field("Integrator::$name") for name in ("nx1", "nz1", "np1", "nu1"))..., field("FixedStepIntegrator::nv1")
-    t0, times, disc = field("Integrator::t0"), Vector{Float64}(field("Integrator::tout")), Vector{Int}(field("FixedStepIntegrator::disc"))
+    nx1, nz1, np1, nu1, nv1 = integer("Integrator::nx1"), integer("Integrator::nz1"), integer("Integrator::np1"), integer("Integrator::nu1"),
+                              integer("FixedStepIntegrator::nv1")
+    t0 = Float64(field("Integrator::t0"))::Float64
+    times, disc = Vector{Float64}(field("Integrator::tout"))::Vector{Float64}, Vector{Int}(field("FixedStepIntegrator::disc"))::Vector{Int}
     step = C.get_function(f, "step")
     forward = nfwd > 0 ? C.get_function(f, "fwd$(nfwd)_step") : nothing
     inputs = MX[outer == 0 ? MX.sym(C.name_in(f, i), C.sparsity_in(f, i)) : MX.sym(C.name_in(f, i), shape_in(i)...) for i in 0:C.n_in(f)-1]
     dense(i) = C.vec(C.densify(inputs[i]))
-    first_part(v, n) = v[1:n]
-    seeds(v, n) = C.reshape(v[n+1:n*(1+nfwd)], n, nfwd)
+    first_part(v, n) = v[1:n]::MX
+    seeds(v, n) = C.reshape(v[n+1:n*(1+nfwd)]::MX, n, nfwd)
     x, p, controls = dense(1), dense(3), dense(4)
     q = MX(C.DM(zeros(C.nnz_out(step, 2) * (1 + nfwd))))
     # The collocation method starts its unknowns from the state at each point; the sensitivities of a first guess are not used.
@@ -1146,7 +1154,7 @@ function fixed_step_function(f::C.Function)
     # The state of the loop is one vector, because `fold` passes on its first argument only.
     nx, nv, nq = C.size1(x), C.size1(v), C.size1(q)
     one = let state = MX.sym("state", nx + nv + nq), t = MX.sym("t"), h = MX.sym("h"), p = MX.sym("p", C.size1(p)), u = MX.sym("u", nu)
-        xs, vs, qs = state[1:nx], state[nx+1:nx+nv], state[nx+nv+1:nx+nv+nq]
+        xs, vs, qs = state[1:nx]::MX, state[nx+1:nx+nv]::MX, state[nx+nv+1:nx+nv+nq]::MX
         point = MX[t, h, first_part(xs, nx1), first_part(vs, nv1), first_part(p, np1), first_part(u, nu1)]
         next = as_list(C.call(step, point, false, true))
         if forward !== nothing
@@ -1159,11 +1167,11 @@ function fixed_step_function(f::C.Function)
     for (k, t_next) in enumerate(times)
         # Loop invariant: `x`, `v` and `q` are the values at the time `t`, and the lists hold the results at the output times before it.
         nj = disc[k+1] - disc[k]
-        h = (t_next - t) / nj
+        h, start = (t_next - t) / nj, t      # the comprehension below reads `start`: capturing `t` would box it
         u = controls[(k-1)*nu+1:k*nu]
         steps = get!(() -> nj == 1 ? one : C.fold(one, nj), loops, nj)
         each(value) = C.repmat(value, 1, nj)
-        state = C.vec(only(as_list(C.call(steps, MX[C.vertcat(MX[x, v, q]), MX(C.DM(reshape([t + j * h for j in 0:nj-1], 1, nj))), each(MX(h)), each(p), each(u)], false, true))))
+        state = C.vec(only(as_list(C.call(steps, MX[C.vertcat(MX[x, v, q]), MX(C.DM(reshape([start + j * h for j in 0:nj-1], 1, nj))), each(MX(h)), each(p), each(u)], false, true))))
         x, v, q = state[1:nx], state[nx+1:nx+nv], state[nx+nv+1:nx+nv+nq]
         push!(states, x)
         push!(algebraic, C.vertcat(MX[v[(d+1)*nv1-nz1+1:(d+1)*nv1] for d in 0:nfwd]))
@@ -1171,7 +1179,7 @@ function fixed_step_function(f::C.Function)
         t = t_next
     end
     g = integrator_results(f, inputs, [states, algebraic, quadratures], length(times), nadj, outer)
-    values = [C.DM(C.sparsity_in(f, i), C.DM([0.37 + 0.11 * k / (1 + C.nnz_in(f, i)) for k in 1:C.nnz_in(f, i)])) for i in 0:C.n_in(f)-1]
+    values = C.DM[C.DM(C.sparsity_in(f, i), C.DM([0.37 + 0.11 * k / (1 + C.nnz_in(f, i)) for k in 1:C.nnz_in(f, i)])) for i in 0:C.n_in(f)-1]
     nonzeros(r) = reduce(vcat, (Vector{Float64}(C.nonzeros(C.densify(x))) for x in r))
     @ensures isapprox(nonzeros(g(values...)), nonzeros(f(values...)); rtol = 1e-9, atol = 1e-12, nans = true) "the written loop must agree with the integrator \"$(C.name(f))\" of CasADi"
     g
@@ -1247,14 +1255,15 @@ function read_callee(callee::C.Function, expand::Bool, callees)
     C.class_name(callee) == "Switch" && return read_switch(callee, expand, callees)
     C.class_name(callee) in INTERPOLANT_CLASSES && return read_callee(interpolant_function(callee), expand, callees)
     C.class_name(callee) == "External" && return external_call(callee)
+    # A solver that the user selected has priority over the method of CasADi. Its reader calls the SciML
+    # extension, so it runs behind a barrier: loading the extension does not invalidate this method.
     if C.class_name(callee) in ROOTFINDER_CLASSES || C.class_name(callee) in INTEGRATOR_CLASSES
-        # A solver that the user selected has priority over the method of CasADi.
-        replaced = C.class_name(callee) in ROOTFINDER_CLASSES ? solver_rootfinder(callee) : solver_integrator(callee)
-        replaced === nothing || return read_callee(replaced, expand, callees)
+        replaced = Base.inferencebarrier(C.class_name(callee) in ROOTFINDER_CLASSES ? solver_rootfinder : solver_integrator)(callee)
+        replaced === nothing || return read_callee(replaced::C.Function, expand, callees)
     end
     if C.is_a(callee, "Nlpsol") || C.is_a(callee, "Conic")
-        replaced = C.is_a(callee, "Nlpsol") ? solver_optimization(callee) : solver_conic(callee)
-        replaced === nothing || return read_callee(replaced, expand, callees)
+        replaced = Base.inferencebarrier(C.is_a(callee, "Nlpsol") ? solver_optimization : solver_conic)(callee)
+        replaced === nothing || return read_callee(replaced::C.Function, expand, callees)
     end
     C.class_name(callee) == "Newton" && return newton_call(callee)
     if C.class_name(callee) in FIXED_STEP_CLASSES

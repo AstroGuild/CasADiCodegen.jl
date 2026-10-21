@@ -47,11 +47,12 @@ function precompile_statements(alg, name::Symbol, nonzeros::Bool, force_SA::Bool
     if nonzeros
         arguments = tuple_type(fill("Vector{Float64}", length(alg.nnz_in)))
         results = ("Vector{Vector{Float64}}", tuple_type(fill("Vector{Float64}", length(alg.nnz_out))))
-        return ["precompile(Generated.$(core_name(name)), ($result, $arguments))" for result in results]
+        return String["precompile(Generated.$(core_name(name)), ($result, $arguments))" for result in results]
     end
-    inputs, outputs = [array_type(sp, false) for sp in alg.sparsity_in], [array_type(sp, false) for sp in alg.sparsity_out]
-    given = force_SA ? [array_type(sp, true) for sp in alg.sparsity_in] : inputs
-    ["precompile(Generated.$name, ($(tuple_type(outputs)), $(tuple_type(inputs))))",
+    sparsity_in, sparsity_out = alg.sparsity_in::Vector{C.Sparsity}, alg.sparsity_out::Vector{C.Sparsity}
+    inputs, outputs = [array_type(sp, false) for sp in sparsity_in], [array_type(sp, false) for sp in sparsity_out]
+    given = force_SA ? [array_type(sp, true) for sp in sparsity_in] : inputs
+    String["precompile(Generated.$name, ($(tuple_type(outputs)), $(tuple_type(inputs))))",
      "precompile(Generated.$(outofplace_name(name)), ($(join(given, ", ")),))"]
 end
 
@@ -69,7 +70,7 @@ function cached_module(generated::String, statements, imports, directory::String
     wrapper = join(["import StaticArrays", "include(\"generated.jl\")", statements...], "\n")
     name = "CasADiCodegenCache_" * string(hash(generated, hash(wrapper)), base = 16, pad = 16)
     id = Base.PkgId(Base.uuid5(CACHE_NAMESPACE, name), name)
-    dependencies = sort!(unique!([dependency(dep) for dep in (:StaticArrays, imports...)]); by = dep -> dep.name)
+    dependencies = sort!(unique!(Base.PkgId[dependency(dep) for dep in (:StaticArrays, imports...)]); by = dep -> dep.name)
     loaded = lock(CACHE_LOCK) do
         Base.root_module_exists(id) && return Base.root_module(id)
         package = joinpath(directory, name)

@@ -89,7 +89,7 @@ function inplace_function(alg, signature, frame, core, index, ref, key)
         zero_fills(alg)..., sparse..., body..., :(return res)))
 end
 
-argument_names(alg) = [Symbol(:arg, i) for i in eachindex(alg.sparsity_in)]
+argument_names(alg) = [Symbol(:arg, i) for i in eachindex(alg.sparsity_in::Vector{C.Sparsity})]
 
 returned(results) = length(results) == 1 ? only(results) : Expr(:tuple, results...)
 

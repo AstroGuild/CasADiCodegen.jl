@@ -101,7 +101,7 @@ Return the statements of a copy operation for one result, which starts after
 `w[result_offset]`. `maps[d]` is the map of the operand that starts after
 `w[operand_offsets[d]]`. An operand at the offset of the result stays in place.
 """
-function copy_statements(maps, operand_offsets, result_offset)
+function copy_statements(maps::Vector{Vector{Int}}, operand_offsets::Vector{Int}, result_offset::Int)
     n = length(first(maps))
     statements = Any[]
     fed = [any(m -> m[k] != 0, maps) for k in 1:n]
@@ -163,7 +163,7 @@ function instruction_statements(em::Emission, alg::MXAlgorithm, ins::MXInstructi
     elseif op in COPY_OPERATIONS
         statements = Any[]
         for (o, slot) in enumerate(ins.out)
-            slot == 0 || append!(statements, copy_statements(ins.data[o], offsets[ins.in], offsets[slot]))
+            slot == 0 || append!(statements, copy_statements((ins.data::Vector{Vector{Vector{Int}}})[o], offsets[ins.in], offsets[slot]))
         end
         statements
     elseif haskey(LINEAR_OPERATIONS, op)
@@ -284,7 +284,7 @@ function linear_statements(em::Emission, ins::MXInstruction, out, at, sizes, scr
     else
         n = data.n
         matrix(first, columns) = :(reshape(view(w, $(first + 1):$(first + n * columns)), $n, $columns))
-        dense = copy_statements([data.place], [at[op === :OP_SOLVE ? 2 : 1]], scratch)
+        dense = copy_statements(Vector{Int}[data.place], Int[at[op === :OP_SOLVE ? 2 : 1]], Int(scratch))
         factors = :($(library(:lu!))($(matrix(scratch, n)); check = false))
         if op === :OP_DETERMINANT
             Any[dense..., :($result = $(library(:det))($factors))]
@@ -311,15 +311,16 @@ function index_statements(em::Emission, ins::MXInstruction, out, at, sizes)
     helper(name) = em.ref(:Helpers, name)
     op === :OP_LOW &&
         return loop(sizes[2], i -> :($(element(out, i)) = $(helper(:low))(w, $(at[1]), $(sizes[1]), $(element(at[2], i)), $(data.mode))))
+    form = data::IndexForm
     reads = op === :OP_GETNONZEROS_PARAM
     keys = at[(reads ? 2 : 3):end]
-    two = !isempty(data.second)
+    two = !isempty(form.second)
     function index(offset, a, b)
         sum = :($(helper(:whole))($(element(keys[1], a))))
         two && (sum = :($sum + $(helper(:whole))($(element(keys[2], b)))))
         offset isa Integer && offset == 0 ? sum : :($offset + $sum)
     end
-    tuples = [(e, data.offsets[e], data.first[e], two ? data.second[e] : 0) for e in eachindex(data.offsets)]
+    tuples = [(e, form.offsets[e], form.first[e], two ? form.second[e] : 0) for e in eachindex(form.offsets)]
     reads && return indexed(em, tuples, (e, offset, a, b) ->
         :($(element(out, e)) = $(helper(:gather))(w, $(at[1]), $(sizes[1]), $(index(offset, a, b)))))
     copied = at[1] == out ? Any[] : loop(sizes[1], i -> :($(element(out, i)) = $(element(at[1], i))))
@@ -426,7 +427,7 @@ function callee!(em::Emission, alg)
     end
     em.callees[alg] = (name, Int[], Int[])        # reserve the name
     statements, offset_in, offset_out = body!(em, alg, name)
-    push!(em.definitions, name => statements)
+    push!(em.definitions, name => statements::Vector{Any})
     em.callees[alg] = (name, offset_in, offset_out)
 end
 
@@ -440,10 +441,12 @@ to them.
 function chunked!(em::Emission, name::Symbol, parts)
     ranges = chunk_ranges(length(parts), chunk_size_for(length(parts), em.chunk_size; limit = DEFAULT_CHUNK_SIZE))
     length(ranges) <= 1 && return reduce(vcat, parts; init = Any[])
-    map(enumerate(ranges)) do (c, range)
+    calls = Any[]
+    for (c, range) in enumerate(ranges)
         push!(em.definitions, chunk_name(name, c) => reduce(vcat, parts[range]; init = Any[]))
-        :($(chunk_name(name, c))(w))
+        push!(calls, :($(chunk_name(name, c))(w)))
     end
+    calls
 end
 
 """

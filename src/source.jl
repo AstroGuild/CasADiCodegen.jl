@@ -278,7 +278,7 @@ function generate_julia(f, io::IO;
     println(io, "const SPARSITY_OUT = ", repr(Tuple(sparsity_tuple.(alg.sparsity_out))))
     println(io, "const DEPENDENCIES = ", repr(Tuple(sort!(collect(imports)))))
     # The objects of the solvers, which the cache on disk compiles (see `warm`).
-    objects = sort!([name for name in values(writer.names) if startswith(String(name), "object_")])
+    objects = sort!([name for name in values(writer.names) if startswith(String(name)::String, "object_")])
     isempty(objects) || push!(writer.definitions, Expr(:const, :(OBJECTS = $(Expr(:tuple, objects...)))))
     for definition in [writer.definitions; definitions]
         println(io)

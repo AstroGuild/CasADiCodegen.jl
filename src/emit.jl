@@ -209,7 +209,7 @@ function split_statements(alg::Algorithm, chunk_size::ChunkSize, ref; base::Inte
     length(ranges) <= 1 && return Vector{Any}[]
     offset_in, offset_out, _ = work_layout(alg)
     live_in, live_out = liveness(alg, ranges)
-    [chunk_statements(alg, ranges[c], live_in[c], live_out[c], ref;
+    Vector{Any}[chunk_statements(alg, ranges[c], live_in[c], live_out[c], ref;
                       load = (i, k) -> :(w[$(base + offset_in[i] + k)]),
                       store = (j, k, value) -> :(w[$(base + offset_out[j] + k)] = $value),
                       slot = s -> base + s)

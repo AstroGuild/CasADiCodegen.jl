@@ -77,7 +77,7 @@ end
 instruction_count(alg::StagedAlgorithm) =
     sum(stage -> stage.live ? length(stage.pre.instructions) : 0, alg.stages; init = 0) + length(alg.post.instructions)
 
-as_list(r) = r isa MX ? MX[r] : collect(MX, r)
+as_list(r) = (r isa MX ? MX[r] : collect(MX, r))::Vector{MX}
 
 """
     staged_algorithm(f) -> StagedAlgorithm or nothing
