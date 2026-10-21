@@ -278,7 +278,8 @@ function generate_julia(f, io::IO;
     isempty(objects) || push!(writer.definitions, Expr(:const, :(OBJECTS = $(Expr(:tuple, objects...)))))
     for definition in [writer.definitions; definitions]
         println(io)
-        definition.head === :function ? print_function(io, definition) : println(io, definition)
+        ex = definition::Expr
+        ex.head === :function ? print_function(io, ex) : println(io, ex)
     end
     println(io, "\nend # module ", module_name)
     nothing

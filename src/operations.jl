@@ -28,7 +28,7 @@ function low(w, grid, n, x, mode)
     if mode == 1
         first = w[grid+1]
         v = (x - first) * (n - 1) / (w[grid+n] - first)
-        return abs(v) < 9.2e18 ? clamp(trunc(Int, v), 0, n - 2) : 0
+        return abs(v) < 9.2e18 ? clamp(trunc(Int, v)::Int, 0, n - 2) : 0
     elseif mode == 2
         (n < 2 || x < w[grid+2]) && return 0
         x > w[grid+n] && return n - 2

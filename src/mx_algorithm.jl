@@ -595,7 +595,7 @@ configuration that CasADi writes before its call of `casadi_convexify_eval`.
 - `scratch`: the work space that the helper needs.
 """
 function convexify_data(source::CSource)
-    config = Dict(String(m[1]) => String(strip(m[2])) for m in eachmatch(r"cvx_config\.(\w+) = ([^;]+);", source.body))
+    config = Dict{String,String}(String(m[1]) => String(strip(m[2])) for m in eachmatch(r"cvx_config\.(\w+) = ([^;]+);", source.body))
     whole(name) = parse(Int, config[name])
     table(name) = get(source.ints, config[name], Int[])
     pattern, operand = table("Hsp"), table("Hrsp")
@@ -610,8 +610,8 @@ function convexify_data(source::CSource)
         # The nonzero of the operand at the place of each nonzero of the result.
         columns, rows = operand[3:operand[2]+3], operand[operand[2]+4:end]
         nin = length(rows)
-        place = Dict((rows[k], c) => k for c in 0:operand[2]-1 for k in columns[c+1]+1:columns[c+2])
-        projection = [get(place, (row[k], c), 0) for c in 0:ncol-1 for k in colind[c+1]+1:colind[c+2]]
+        place = Dict{Tuple{Int,Int},Int}((rows[k], c) => k for c in 0:operand[2]-1 for k in columns[c+1]+1:columns[c+2])
+        projection = Int[get(place, (row[k], c), 0) for c in 0:ncol-1 for k in colind[c+1]+1:colind[c+2]]
     end
     strategy = findfirst(==(config["strategy"]), CONVEXIFY_STRATEGIES) - 1
     nmax = maximum(diff(offsets); init = 0)
@@ -1027,7 +1027,7 @@ Each input and result of `f` holds, for each column of the original, that
 column followed by its derivative in each direction. CasADi differentiates the
 results.
 """
-function forward_columns(f::C.Function, inputs::Vector{MX}, results::Vector{MX}, directions::Integer)
+function forward_columns(f::C.Function, inputs::Vector{MX}, results::Vector{MX}, directions::Int)
     seeds = MX[MX.sym("d" * C.name_in(f, i - 1), C.sparsity(inputs[i])) for i in eachindex(inputs)]
     slope(value) = reduce(+, (C.jtimes(value, inputs[i], seeds[i]) for i in eachindex(inputs) if C.nnz(C.sparsity(inputs[i])) > 0);
                           init = MX(C.DM(zeros(size(value)...))))
@@ -1064,7 +1064,7 @@ controls, once per direction. With `outer > 0` forward directions, which a
 second-order derivative needs, the function is the forward derivative of that
 one (see `forward_columns`); `inputs` then have the columns of one direction.
 """
-function integrator_results(f::C.Function, inputs::Vector{MX}, lists, count::Integer, nadj::Integer, outer::Integer)
+function integrator_results(f::C.Function, inputs::Vector{MX}, lists, count::Int, nadj::Int, outer::Int)
     shape_out(o) = (C.size1_out(f, o), C.size2_out(f, o) ÷ (1 + outer))
     fitted(value, o) = outer == 0 ? C.project(C.reshape(value, shape_out(o)...), C.sparsity_out(f, o)) : C.reshape(value, shape_out(o)...)
     results = MX[fitted(C.vertcat(lists[o+1]), o) for o in 0:2]
@@ -1121,7 +1121,7 @@ The function is checked against `f` on one evaluation.
 function fixed_step_function(f::C.Function)
     bytes = serial_bytes(f)
     field(name) = serial_value(bytes, name)
-    directions, nadj = field("Integrator::nfwd"), field("Integrator::nadj")
+    directions, nadj = Int(field("Integrator::nfwd"))::Int, Int(field("Integrator::nadj"))::Int
     field("Integrator::ne") == 0 || return nothing
     # An integrator with adjoint sensitivities and forward directions is the forward derivative of the one with no
     # direction: the loop is written for that one, and CasADi differentiates it (`outer` directions). Without

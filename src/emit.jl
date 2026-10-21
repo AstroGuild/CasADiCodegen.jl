@@ -273,7 +273,7 @@ end
 chunk_function(signature, statements) =
     Expr(:function, signature, Expr(:block, inbounds_block(statements), :(return nothing)))
 
-chunk_name(name::Symbol, c::Integer) = Symbol(name, :_chunk, c)
+chunk_name(name::Symbol, c::Int) = Symbol(name, :_chunk, c)
 
 """
     function_definitions(alg, name, chunk_size, ref) -> Vector{Expr}
@@ -320,6 +320,12 @@ calls it.
 algorithm(alg; expand::Bool = true, solvers::Union{Nothing,Solvers} = nothing) = alg
 function algorithm(f::C.Function; expand::Bool = true, solvers::Union{Nothing,Solvers} = nothing)
     C.is_a(f, "SXFunction") && return Algorithm(f)
+    # The barrier keeps the readers of matrix functions out of the inferred code of this method,
+    # so that another package that invalidates them does not invalidate the path of scalar functions.
+    Base.inferencebarrier(matrix_algorithm)(f, expand, solvers)
+end
+
+function matrix_algorithm(f::C.Function, expand::Bool, solvers::Union{Nothing,Solvers})
     f = matrix_function(f)
     # The readers of the called functions find the solvers of the user in `SOLVERS`.
     Base.ScopedValues.with(SOLVERS => solvers) do

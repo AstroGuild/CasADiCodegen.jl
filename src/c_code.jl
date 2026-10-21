@@ -56,7 +56,7 @@ Return the arguments of the last call of the CasADi runtime routine `routine`
 (without the prefix `casadi_`) in the statements of `source`, or `nothing`
 when the statements do not call it.
 """
-function c_call(source::CSource, routine::AbstractString)
+function c_call(source::CSource, routine::AbstractString)::Union{Nothing,Vector{String}}
     found = collect(eachmatch(Regex("(?:casadi_|CASADI_PREFIX\\()$routine\\)?\\(([^;]*)\\);"), source.body))
     isempty(found) ? nothing : String.(strip.(split(last(found)[1], ',')))
 end
@@ -119,7 +119,7 @@ therefore belongs to the function itself. `first = true` selects the first
 one, for a field of the base class, which comes before the other functions.
 """
 function serial_value(bytes::Vector{UInt8}, name::AbstractString; first::Bool = false)
-    key = UInt8[0x73; 0x69; reinterpret(UInt8, [Int32(ncodeunits(name))]); codeunits(name)]
+    key = [UInt8[0x73, 0x69]; Vector{UInt8}(reinterpret(UInt8, [Int32(ncodeunits(name))])); Vector{UInt8}(codeunits(name))]
     at = first ? findfirst(key, bytes) : findlast(key, bytes)
     @requires at !== nothing "CasADi does not write the field \"$name\""
     serial_read(bytes, last(at) + 1)[1]

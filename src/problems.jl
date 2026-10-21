@@ -148,7 +148,7 @@ end
 numbers(n::Integer) = n == 1 ? "1 number" : "$n numbers"
 
 "The elements `from + 1` to `from + n` of the column vector `v`, with the sparsity pattern `pattern`."
-function piece(v, from::Integer, pattern)
+function piece(v, from::Int, pattern)
     n = C.nnz(pattern)
     n == 0 && return MX(pattern)
     values = v[from+1:from+n]
@@ -205,16 +205,19 @@ The sizes are those of `dae`: an integrator for sensitivities has the equations 
 sensitivities in it.
 """
 function integrator_model(I::C.Function)
-    name = C.name(I)
+    name = String(C.name(I))::String
     @requires C.class_name(I) in INTEGRATOR_CLASSES "function \"$name\" is not an integrator of CasADi"
     bytes = serial_bytes(I)
     field(key) = serial_value(bytes, key)
     dae = C.get_function(I, "dae")
+    # The serial form gives values of unknown type; typed fields keep the code that reads them inferable.
+    real(key) = Float64(field(key))::Float64
+    whole(key) = Int(field(key))::Int
     tolerances = C.class_name(I) in VARIABLE_STEP_CLASSES ?
-                 (; abstol = field("SundialsInterface::abstol"), reltol = field("SundialsInterface::reltol")) : (;)
-    (; name, dae, t0 = Float64(field("Integrator::t0")), times = Vector{Float64}(field("Integrator::tout")),
-       nx = field("Integrator::nx"), nz = field("Integrator::nz"), nq = field("Integrator::nq"), np = field("Integrator::np"), nu = field("Integrator::nu"),
-       events = C.nnz_out(dae, 3), nfwd = field("Integrator::nfwd"), nadj = field("Integrator::nadj"), tolerances)
+                 (; abstol = real("SundialsInterface::abstol"), reltol = real("SundialsInterface::reltol")) : (;)
+    (; name, dae, t0 = real("Integrator::t0"), times = Vector{Float64}(field("Integrator::tout"))::Vector{Float64},
+       nx = whole("Integrator::nx"), nz = whole("Integrator::nz"), nq = whole("Integrator::nq"), np = whole("Integrator::np"), nu = whole("Integrator::nu"),
+       events = Int(C.nnz_out(dae, 3))::Int, nfwd = whole("Integrator::nfwd"), nadj = whole("Integrator::nadj"), tolerances)
 end
 
 """
@@ -259,7 +262,7 @@ function right_side(model)
     end
     du = C.vertcat(reduce(vcat, parts))
     @ensures size(du, 1) == size(u, 1) "the equations of integrator \"$(model.name)\" must give one number per state"
-    Front.Function(model.name * "_rhs", [u, p, t], [du])
+    Front.Function((model.name::String) * "_rhs", [u, p, t], [du])
 end
 
 """
@@ -269,7 +272,7 @@ Return the differential states, the algebraic states, the parameters and the con
 an integrator of CasADi in the vectors `u` and `p` of `right_side`: those of the model for
 `k = 0`, and those of the forward direction `k` otherwise.
 """
-function model_block(model, u, p, k::Integer)
+function model_block(model, u, p, k::Int)
     dae = model.dae
     x1, z1, p1, u1 = (C.nnz_in(dae, i) for i in 1:4)
     MX[piece(u, k * x1, C.sparsity_in(dae, 1)), piece(u, model.nx + k * z1, C.sparsity_in(dae, 2)),
@@ -312,7 +315,7 @@ function event_functions(model, transition)
         made = as_list(C.call(transition, arguments, false, false))
         after = MX[C.nnz_out(transition, o) == 0 ? after[o+1] : piece(column_of(made[o+1]), 0, C.sparsity_in(dae, o + 1)) for o in 0:1]
     end
-    seeds = [MX[MX.sym("d$(k)_" * C.name_in(dae, i), C.sparsity_in(dae, i)) for i in 1:4] for k in 1:directions]
+    seeds = [MX[MX.sym("d$(k)_" * C.name_in(dae, i)::String, C.sparsity_in(dae, i)) for i in 1:4] for k in 1:directions]
     results = MX[column_of(after[1]), column_of(after[2])]
     shifts = MX[]
     if directions > 0
@@ -400,7 +403,7 @@ function optimization_model(S::C.Function)
     (; name, objective, constraints, nx = C.nnz_in(objective, 0), np = C.nnz_in(objective, 1), ng = C.nnz_out(constraints, 0))
 end
 
-part(v, from::Integer, n::Integer) = n == 0 ? MX(0, 1) : v[from+1:from+n]
+part(v, from::Int, n::Int) = n == 0 ? MX(0, 1) : v[from+1:from+n]
 
 nonzero_column(v) = C.is_dense(v) ? C.vec(v) : C.nnz(C.sparsity(v)) == 0 ? MX(0, 1) : C.vertcat(MX[e for e in C.nonzeros(v)])
 

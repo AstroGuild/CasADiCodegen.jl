@@ -38,14 +38,14 @@ function Emission(name::Symbol, chunk_size::ChunkSize, ref)
              IdDict{Any,Tuple{Symbol,Vector{Int},Vector{Int}}}(), Pair{Symbol,Any}[], Ref(0))
 end
 
-element(offset::Integer, i::Integer) = :(w[$(offset + i)])
-element(offset::Integer, i) = offset == 0 ? :(w[$i]) : :(w[$offset + $i])
+element(offset::Int, i::Int) = :(w[$(offset + i)])
+element(offset::Int, i) = offset == 0 ? :(w[$i]) : :(w[$offset + $i])
 
-loop(n::Integer, statement) = n == 0 ? Any[] : n == 1 ? Any[statement(1)] :
+loop(n::Int, statement) = n == 0 ? Any[] : n == 1 ? Any[statement(1)] :
     Any[Expr(:for, :(i = 1:$n), Expr(:block, statement(:i)))]
 
-stride(first::Integer, step::Integer, i::Integer) = first + step * (i - 1)
-stride(first::Integer, step::Integer, i) =
+stride(first::Int, step::Int, i::Int) = first + step * (i - 1)
+stride(first::Int, step::Int, i) =
     step == 1 ? (first == 1 ? i : :($(first - 1) + $i)) : :($(first - step) + $step * $i)
 
 """
@@ -272,7 +272,7 @@ function linear_statements(em::Emission, ins::MXInstruction, out, at, sizes, scr
             :($(element(out, el)) += $(element(at[2], 1)) * $(element(at[3], r)) * $(element(at[4], c)))
         start = op === :OP_BILIN ? Any[:($result = zero(eltype(w)))] : keep()
         data.dims === nothing &&
-            return Any[start..., indexed(em, collect(zip(eachindex(data.rows), data.rows, data.columns)), term)...]
+            return Any[start..., indexed(em, NTuple{3,Int}[(k, data.rows[k], data.columns[k]) for k in eachindex(data.rows)], term)...]
         nr, nc = data.dims
         Any[start..., nested((:(c = 1:$nc), :(r = 1:$nr)), term(:(r + $nr * (c - 1)), :r, :c))...]
     elseif op === :OP_SOLVE && data.qr !== nothing
@@ -400,7 +400,7 @@ Reserve the frame of one function in the work vector: the nonzeros of each
 input, those of each output, and `own` elements after `w[start]`. Nonzero `k`
 of input `i` is `w[offset_in[i] + k]`.
 """
-function frame!(em::Emission, alg, own::Integer)
+function frame!(em::Emission, alg, own::Int)
     sizes = [alg.nnz_in; alg.nnz_out]
     offsets = em.free[] .+ cumsum(sizes) .- sizes
     start = em.free[] + sum(sizes)
@@ -530,7 +530,10 @@ of a callback: the function itself by default, or an expression that names it.
 function mx_definitions(alg::MXAlgorithm, name::Symbol, chunk_size::ChunkSize, ref; julia = identity)
     em, (layout, statements) = emission(alg, name, chunk_size, ref)
     sites = call_sites(last.(em.julia))
-    functions = Dict{Symbol,Any}(placeholder => julia(sites[f]) for (placeholder, f) in em.julia)
+    functions = Dict{Symbol,Any}()
+    for (placeholder, f) in em.julia
+        functions[placeholder] = julia(sites[f])
+    end
     first = Any[:($(julia(new_call!))()) for _ in first_statements(sites)]
     definitions = Expr[]
     for (table, values) in (em.constants_name => em.constants, em.indices_name => em.indices)
@@ -564,9 +567,12 @@ statements of its callers, as are the constant table and the index table.
 function runtime_frame(alg::MXAlgorithm, chunk_size::ChunkSize, ref)
     em, (layout, statements) = emission(alg, :entry, chunk_size, ref)
     generate(ex) = RuntimeGeneratedFunction(@__MODULE__, CONTEXT[], ex)
-    values = Dict{Symbol,Any}(em.constants_name => em.constants, em.indices_name => em.indices)
+    values = Dict{Symbol,Any}()
+    values[em.constants_name], values[em.indices_name] = em.constants, em.indices
     sites = call_sites(last.(em.julia))
-    merge!(values, Dict(placeholder => sites[f] for (placeholder, f) in em.julia))
+    for (placeholder, f) in em.julia
+        values[placeholder] = sites[f]
+    end
     for (callee, body) in em.definitions
         ex = chunk_function(:((w,)), Any[substitute(s, values) for s in body])
         values[callee] = RuntimeGeneratedFunctions.drop_expr(generate(ex))
