@@ -117,7 +117,7 @@ can be in any order. A model with quadratures returns them as a second result.
   algebraic state and 1 for the others. The element of `"ode"` for an algebraic state is
   the residual of an algebraic equation, and its initial value is a guess. `alg` must
   accept a mass matrix, as `Rodas5P()` of OrdinaryDiffEqRosenbrock.jl does. A vector of
-  times and an event function are not supported with it.
+  times is not supported with it.
 - `direction = 0`: the change of sign of `"zero"` that is an event: any with 0, from
   negative to positive with 1, and from positive to negative with -1.
 - `interp_points = 10`: the number of points of each step at which the solver looks for
@@ -173,12 +173,11 @@ function CasADiCodegen.integrator(name::AbstractString, alg::SciMLBase.AbstractO
     make_solver(rhs, n, m) = Solver(String(name), rhs, alg, NaN, NaN, true, specialize, values(options))
     @requires haskey(dae, "zero") || (events == 1 && terminal) "integrator \"$name\": events and terminal need an event function, \"zero\""
     haskey(dae, "zero") || return CasADiCodegen.Codegen.ode_integrator(name, dae, make_solver; adjoint, mass = Vector{Float64}(mass))
-    @requires isempty(mass) "integrator \"$name\": an event function with algebraic states is not supported"
     # Without full specialization the solver does not know the type of the event function,
     # so that it compiles once for all integrators with an event.
     crossing(zero) = specialize === SciMLBase.FullSpecialize ? Crossing(zero) : Crossing{Any}(zero)
     make_event(rhs, zero, n, m) = EventSolver(String(name), rhs, crossing(zero), alg, Int(direction), Int(interp_points), specialize, values(options))
-    CasADiCodegen.Codegen.ode_event(name, dae, make_solver, make_event; adjoint, events, terminal)
+    CasADiCodegen.Codegen.ode_event(name, dae, make_solver, make_event; adjoint, events, terminal, mass = Vector{Float64}(mass))
 end
 
 "The event function of an integrator as the condition `(u, t, integrator)` of a SciML callback."
@@ -215,11 +214,13 @@ function (s::EventSolver)(limit, x0, rest...)
     T = float(promote_type(eltype(limit), eltype(x0), eltype(q), eltype(rest[end])))
     t0, tf = T(rest[end][1]), T(limit[1])
     state = get!(task_local_storage(), tf < t0 ? (s, T, :backward) : (s, T)) do
-        make_state(s, copyto!(Vector{T}(undef, length(x0)), x0), copyto!(Vector{T}(undef, length(q)), q), t0, tf == t0 ? t0 + one(T) : tf)
+        u0, q0 = copyto!(Vector{T}(undef, length(x0)), x0), copyto!(Vector{T}(undef, length(q)), q)
+        make_state(s, CasADiCodegen.Codegen.consistent!(u0, s.rhs, q0, t0), q0, t0, tf == t0 ? t0 + one(T) : tf)
     end
     if tf != t0
         copyto!(state.sol.prob.u0, x0)
         copyto!(state.p, q)
+        CasADiCodegen.Codegen.consistent!(state.sol.prob.u0, s.rhs, state.p, t0)
         run!(state, s, t0, tf) && return StaticArrays.SVector{1,T}(event_time(state, s, T))
     end
     error("integrator \"$(s.name)\": no event between the initial time $t0 and the final time $tf")
@@ -245,7 +246,9 @@ function event_time(state, s::EventSolver, ::Type{T}) where {T}
     s.rhs(flow, u, state.p, t)
     h = T(sqrt(eps(Float64)))
     residual = s.zero(u, t, state)
-    slope = (s.zero(u .+ h .* flow, t + h, state) - residual) / h
+    # The rows of the algebraic states hold residuals, so those states follow from their equations at the later time.
+    moved = CasADiCodegen.Codegen.consistent!(u .+ h .* flow, s.rhs, state.p, t + h)
+    slope = (s.zero(moved, t + h, state) - residual) / h
     t - residual / slope
 end
 
@@ -260,7 +263,7 @@ function make_state(s::EventSolver, ::Type{S}, u0::Vector, q0::Vector, t0, tf) w
     stop = SciMLBase.terminate!
     callback = SciMLBase.ContinuousCallback(s.zero, s.direction >= 0 ? stop : nothing, s.direction <= 0 ? stop : nothing;
                                             save_positions = (false, false), s.interp_points)
-    problem = SciMLBase.ODEProblem{true,S}(s.rhs, u0, (t0, tf), q0)
+    problem = SciMLBase.ODEProblem{true,S}(problem_function(s.rhs, S), u0, (t0, tf), q0)
     SciMLBase.init(problem, s.alg; callback, save_everystep = false, save_start = false, save_end = false, s.options...)
 end
 
@@ -286,14 +289,18 @@ end
 Return the SciML callback of the event functions `zero!((e,), (u, p, (t,)))` of an
 integrator of CasADi (see `CasADiCodegen.Codegen.event_functions`): when `e[i]` changes its sign
 from positive to negative, the state becomes that of
-`jump!((after,), (before, p, (t,), (i - 1,)))`. The algebraic states then satisfy the
-algebraic equations of `rhs` again (see `CasADiCodegen.Codegen.consistent!`).
+`jump!((after,), (before, p, (t,), (i - 1,), z))`, where `z` holds the algebraic states
+after the event. The algebraic states then satisfy the algebraic equations of `rhs` again
+(see `CasADiCodegen.Codegen.consistent!`). With algebraic states, `jump!` runs twice: first
+with those before the event as `z`, then with those that satisfy the algebraic equations
+after it, which the derivatives of the states need.
 
 Each event increments `count[]`, and the event after `limit` of them throws an error.
 """
 function event_callback(name::String, rhs, zero, jump, events::Int, count::Base.RefValue{Int}, limit::Int)
     @requires pkgversion(SciMLBase) >= v"3" "integrator \"$name\": an event function needs SciMLBase.jl 3 or later; got $(pkgversion(SciMLBase))"
-    before = Float64[]
+    before, algebraic = Float64[], rhs.mass === nothing ? Int[] : findall(iszero, rhs.mass)
+    z = zeros(length(algebraic))
     condition(out, u, t, integrator) = (zero((out,), (u, integrator.p, (t,))); nothing)
     # `crossings[i]` is -1 when value `i` changes its sign from positive to negative, and +1 for the opposite change.
     function event!(integrator, crossings)
@@ -304,7 +311,13 @@ function event_callback(name::String, rhs, zero, jump, events::Int, count::Base.
             count[] += 1
             count[] > limit && error("integrator \"$name\": more than $limit events, the last one at the time $(integrator.t)")
             copyto!(resize!(before, length(integrator.u)), integrator.u)
-            jump((integrator.u,), (before, integrator.p, (integrator.t,), (Float64(i - 1),)))
+            z .= view(before, algebraic)
+            jump((integrator.u,), (before, integrator.p, (integrator.t,), (Float64(i - 1),), z))
+            isempty(algebraic) && continue
+            CasADiCodegen.Codegen.consistent!(integrator.u, rhs, integrator.p, integrator.t)
+            z .= view(integrator.u, algebraic)
+            jump((integrator.u,), (before, integrator.p, (integrator.t,), (Float64(i - 1),), z))
+            integrator.u[algebraic] .= z
         end
         CasADiCodegen.Codegen.consistent!(integrator.u, rhs, integrator.p, integrator.t)
         nothing

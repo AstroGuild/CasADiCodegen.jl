@@ -142,9 +142,13 @@ its diagonal: 0 for an algebraic state and 1 for the other states. The rows of
 - Forward derivatives of any order are supported.
 - The times are `t0` and `tf`, fixed or free. `adjoint = true` gives adjoint
   equations with the same mass.
-- A vector of times and an event function are not supported. These limits apply to
-  `integrator` with a SciML algorithm; an integrator `idas` of CasADi that generated
-  code replaces has its own rules (see [Replace the solvers of CasADi](@ref)).
+- An event function is supported with free times, `integrator(name, alg, dae; mass, ...)`.
+  `"zero"` can depend on the algebraic states. `"transition"` returns all rows of `"x"`;
+  its algebraic rows are a guess, which the integrator replaces by the solution of the
+  algebraic equations after the jump.
+- A vector of times is not supported. This limit applies to `integrator` with a SciML
+  algorithm; an integrator `idas` of CasADi that generated code replaces has its own
+  rules (see [Replace the solvers of CasADi](@ref)).
 
 ```julia
 using OrdinaryDiffEqRosenbrock: Rodas5P

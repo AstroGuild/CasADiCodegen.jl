@@ -183,6 +183,17 @@ end
 const DAE_SOLVER = Solver(Rodas5P(); abstol = 1e-11, reltol = 1e-11, specialize = SciMLBase.AutoSpecialize)
 dae_exact(x0, rate) = (final = x0[1] * exp(-rate); [final, x0[2] + x0[1] * (1 - exp(-rate)) / rate, rate * final])
 
+"""
+The state at the time `t` of the decay x' = -r x from `x0` at the time 0, which doubles
+when r x falls to 0.55: the first event at x = 0.55 / r, then one event each time x halves.
+"""
+function refilled(t, x0, rate)
+    onset = log(rate * x0 / 0.55) / rate
+    t < onset && return x0 * exp(-rate * t)
+    events = 1 + floor((t - onset) * rate / log(2))
+    2 * 0.55 / rate * exp(-rate * (t - onset) + (events - 1) * log(2))
+end
+
 @testset "integrator of this package with algebraic states" begin
     y, p = MX.sym("y", 3), MX.sym("p")
     model = Dict("x" => y, "p" => p, "ode" => C.vertcat([-y[3], y[1], y[3] - p * y[1]]))
@@ -229,6 +240,23 @@ dae_exact(x0, rate) = (final = x0[1] * exp(-rate); [final, x0[2] + x0[1] * (1 - 
     final = dae_exact([0.4, -0.3], 1.7)
     rate = [-final[3], final[1], -1.7 * final[3]]
     @test reshape(evaluated(native(m), m, [[0.4, -0.3, 0.2], [1.7], [0.5], [1.5]])[1], 3, 5) ≈ [by_state zeros(3) -rate rate] rtol = 1e-7 atol = 1e-9
+    # An event function of the algebraic state z = r x, with a jump of x, so that z no longer satisfies its equation after it.
+    @testset "an event" begin
+        w = MX.sym("w", 2)
+        decay = Dict("x" => w, "p" => p, "ode" => C.vertcat([-w[2], w[2] - p * w[1]]), "zero" => w[2] - 0.55, "transition" => C.vertcat([2w[1], w[2]]))
+        refill = CasADiCodegen.integrator("refill", Rodas5P(), decay; mass = [1.0, 0.0], events = 2, terminal = false, abstol = 1e-11, reltol = 1e-11,
+                                          specialize = SciMLBase.AutoSpecialize)
+        out = refill(w, p, MX(0.0), MX(1.6))
+        n = CasADiCodegen.Function("n", [w, p], [out[1], out[2], C.densify(C.jacobian(C.vertcat([out[1], out[2]]), C.vertcat([w, p])))])
+        onset(x0, rate) = log(rate * x0 / 0.55) / rate
+        exact(v) = (x = refilled(1.6, v[1], v[3]); [x, v[3] * x, onset(v[1], v[3]), onset(v[1], v[3]) + log(2) / v[3]])
+        at = [1.0, 0.3, 1.1]                      # the second number is a guess of the algebraic state
+        @test all_agree(evaluated(native(n), n, [at[1:2], at[3:3]]), [exact(at)[1:2], exact(at)[3:4], vec(ForwardDiff.jacobian(exact, at))]; rtol = 1e-7)
+        # Dual numbers through the generated code: the derivative of the first event time.
+        times = build_function(CasADiCodegen.Function("e", [w, p], [out[2]]); nonzeros = true, expression = Val{false})
+        event(v) = (res = [zeros(eltype(v), 2)]; times(res, (v[1:2], v[3:3])); res[1][1])
+        @test ForwardDiff.gradient(event, at) ≈ ForwardDiff.gradient(v -> onset(v[1], v[3]), at) rtol = 1e-7
+    end
 end
 
 @testset "integrator of CasADi with algebraic states" begin
@@ -252,16 +280,16 @@ end
     @test evaluated(native(h; solvers), h, values)[1] ≈ [2 * full[1] * by_rate[1] + 2 * full[2] * by_rate[2] + by_rate[3] - by_rate[1]] rtol = 1e-7
     # The solver for ordinary differential equations is not that of a model with algebraic states.
     @test_throws "give one with the option solvers = CasADiCodegen.Solvers(dae = ...)" K.algorithm(f; expand = false, solvers = Solvers(ode = PRECISE))
-    # An event: the decay x' = -z with z = p x doubles x when it falls to 0.5, so that the algebraic state follows the jump.
+    # An event: the decay x' = -z with z = r x doubles x when z falls to 0.55, so that the algebraic state follows the jump.
+    # The event function depends on the algebraic state, so the event time depends on its rate.
     y, r = MX.sym("y"), MX.sym("r")
     doubling = C.Function("transition", Dict("x" => y, "post_x" => 2y), C.event_in(), C.event_out())
-    refill = C.integrator("refill", "idas", Dict("x" => y, "z" => z, "p" => r, "ode" => -z, "alg" => z - r * y, "zero" => y - 0.5), 0.0, [0.4, 1.0, 1.6],
+    refill = C.integrator("refill", "idas", Dict("x" => y, "z" => z, "p" => r, "ode" => -z, "alg" => z - r * y, "zero" => z - 0.55), 0.0, [0.4, 1.0, 1.6],
                           Dict("transition" => doubling))
     after = refill(y, z, r, MX(0, 1), MX(), MX(), MX())
-    k = CasADiCodegen.Function("k", [y, z, r], [after[1], after[2]])
-    period = log(2) / 1.1                     # the time from 1 to 0.5, after which each event starts again from 1
-    states = [exp(-1.1 * 0.4), exp(-1.1 * (1.0 - period)), exp(-1.1 * (1.6 - 2period))]
-    @test all_agree(evaluated(native(k; solvers), k, [[1.0], [0.0], [1.1]]), [states, 1.1 * states]; rtol = 1e-7)
-    slope = CasADiCodegen.Function("slope", [y, z, r], [C.jtimes(after[1], r, MX(1.0))])
-    @test_throws "the derivatives of an integrator with algebraic states and an event function are not supported" K.algorithm(slope; expand = false, solvers)
+    k = CasADiCodegen.Function("k", [y, z, r], [after[1], after[2], C.jtimes(after[1], r, MX(1.0)), C.jtimes(after[1], y, MX(1.0)), C.jtimes(after[2], r, MX(1.0))])
+    states(x0, rate) = [refilled(t, x0, rate) for t in (0.4, 1.0, 1.6)]
+    by_rate = ForwardDiff.derivative(rate -> states(1.0, rate), 1.1)
+    expected = [states(1.0, 1.1), 1.1 * states(1.0, 1.1), by_rate, ForwardDiff.derivative(x0 -> states(x0, 1.1), 1.0), states(1.0, 1.1) + 1.1 * by_rate]
+    @test all_agree(evaluated(native(k; solvers), k, [[1.0], [0.0], [1.1]]), expected; rtol = 1e-7)
 end

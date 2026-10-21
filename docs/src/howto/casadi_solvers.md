@@ -144,9 +144,11 @@ J = jacobian(final, vertcat(s0, q))
 f = CasadiFunction("f", [s0, q], [final, CasADiCodegen.C.densify(J)])
 ```
 
-CasADi has no reverse mode through an integrator with events. For an integrator with
-events and algebraic states, the package refuses the derivatives when it builds the
-code.
+CasADi has no reverse mode through an integrator with events, so such an integrator has
+forward derivatives only, also with algebraic states. The event function can then depend
+on the algebraic states, and the derivatives of the event time and of the states after it
+are exact; after the transition, the package solves the algebraic equations again for the
+algebraic states and for their derivatives.
 
 ## Solve the problem in Julia
 
